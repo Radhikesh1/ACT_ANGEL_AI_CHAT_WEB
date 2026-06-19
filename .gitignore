@@ -1,0 +1,61 @@
+server/public
+vite.config.ts.*
+*.tar.gz
+
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build outputs (optional - decide based on your strategy)
+dist/  # Uncomment if you DON'T want to track built files
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.local
+# Temporary files
+tmp/
+temp/
+
+# AWS/Deployment files
+*.pem
+*.pub
+deploy.tar.gz
+actangel-deploy.tar.gz
+
+# PM2
+pm2.log
+.pm2/
+
+#document
+docs/
+attached_assets/
+
+#package
+package-lock.json
+
+# Claoude file
+.claude/
