@@ -136,25 +136,23 @@ export default function ProfilePage() {
   return (
     <div className="h-screen flex flex-col bg-background font-sans overflow-hidden">
       {/* Header */}
-      <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center px-3 md:px-6 gap-3 shrink-0 z-10">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/chat")} aria-label="Back">
-          <ArrowLeft className="w-5 h-5" />
+      <header className="h-14 bg-card border-b border-border flex items-center px-4 md:px-6 gap-3 shrink-0">
+        <Button variant="ghost" size="icon" className="rounded-lg border border-border h-9 w-9 hover:bg-primary/10 hover:text-primary" onClick={() => setLocation("/chat")} aria-label="Back">
+          <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div className="flex items-center gap-2">
-          <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain" />
-          <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight">
-            Act Angel AI
-          </span>
-        </div>
+        <Logo className="w-6 h-6 object-contain shrink-0" />
+        <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base tracking-tight hidden sm:block">
+          Act Angel AI
+        </span>
         <span className="text-muted-foreground text-sm hidden sm:block">/ Profile</span>
       </header>
 
       <div className="flex-1 overflow-y-auto">
         <div className="w-full max-w-6xl mx-auto px-3 md:px-6 py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
           {/* ── Left: Profile Form ── */}
-          <div className="lg:col-span-2">
+          <div className="md:col-span-2">
             <Card className="border-none shadow-sm">
               <CardContent className="p-4">
 

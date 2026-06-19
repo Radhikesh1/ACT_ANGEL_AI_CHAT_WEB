@@ -12,7 +12,20 @@ import {
   ArrowDown,
   Headphones,
   User,
+  Paperclip,
+  FileText,
+  Mic,
+  StopCircle,
+  RefreshCw,
+  X,
+  Bell,
+  Menu,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +39,11 @@ import {
   useLogout,
   useGetChatLogs,
   getGetChatLogsQueryKey,
+  useGetNotifications,
+  useMarkNotificationRead,
+  useDeleteNotification,
   ApiError,
+  type Notification,
 } from "@/lib/api";
 import { Logo } from "@/components/Logo";
 import { useQueryClient } from "@tanstack/react-query";
@@ -39,6 +56,22 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatDistanceToNow, fromUnixTime, parseISO, isValid } from "date-fns";
 
 // ── Types ────────────────────────────────────────────────────────────────────
+
+interface AttachmentData {
+  url: string;
+  type: "image" | "document" | "audio";
+  filename: string;
+  size: number;
+  duration?: number;
+  mimeType?: string;
+  caption?: string;
+}
+
+interface PendingAttachment {
+  file: File;
+  previewUrl?: string;
+  type: "image" | "document" | "audio";
+}
 
 interface ActMessage {
   id: string;
@@ -53,6 +86,9 @@ interface ActMessage {
   createdAt?: string;
   agentName?: string;
   type?: string;
+  mediaUrl?: string;
+  mediaMetadata?: { fileName?: string; fileSize?: number; mimeType?: string };
+  attachments?: AttachmentData[];
 }
 
 interface ActChatItem {
@@ -76,6 +112,10 @@ interface DisplayMessage {
   text: string;
   timestamp: Date | null;
   isPending?: boolean;
+  type?: string;
+  mediaUrl?: string;
+  mediaMetadata?: { fileName?: string; fileSize?: number; mimeType?: string };
+  attachments?: AttachmentData[];
 }
 
 interface Organisation {
@@ -303,7 +343,7 @@ function OrgPicker({
                 <button
                   key={org.id}
                   onClick={() => onSelect(org)}
-                  className="w-full p-4 border border-border rounded-xl text-left hover:border-primary hover:bg-primary/5 active:bg-primary/10 transition-all group flex items-center gap-4"
+                  className="w-full p-4 border border-border rounded-xl text-left hover:border-primary hover:bg-primary/10 active:bg-primary/15 transition-all group flex items-center gap-4"
                 >
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
                     <Building2 className="w-5 h-5 text-primary" />
@@ -343,9 +383,15 @@ export default function ChatPage() {
   const [message, setMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    PendingAttachment[]
+  >([]);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Org selection state for Super Admin
   const [selectedOrg, setSelectedOrg] = useState<{
@@ -360,6 +406,12 @@ export default function ChatPage() {
   const isUserScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   const { contactId, mobile } = useMemo(() => getUrlParams(), []);
 
@@ -382,6 +434,33 @@ export default function ChatPage() {
       },
     },
   });
+
+  // ── Notifications ──────────────────────────────────────────────────────────
+  const { data: notificationsData } = useGetNotifications({
+    query: { refetchInterval: 30000, enabled: !!user },
+  });
+  const notificationsList: Notification[] = notificationsData ?? [];
+  const unreadCount = notificationsList.filter((n) => !n.read).length;
+
+  const { mutate: markReadMutation } = useMarkNotificationRead({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    },
+  });
+  const { mutate: deleteNotificationMutation } = useDeleteNotification({
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    },
+  });
+
+  const markNotifRead = (id: string) => markReadMutation(id);
+  const markAllRead = () =>
+    notificationsList
+      .filter((n) => !n.read)
+      .forEach((n) => markReadMutation(n.id));
+  const dismissNotif = (id: string) => deleteNotificationMutation(id);
 
   // Derived values
   const isSuperAdmin =
@@ -505,7 +584,12 @@ export default function ChatPage() {
   const serverDisplayMessages: DisplayMessage[] = useMemo(() => {
     if (!selectedChat) return [];
     return (selectedChat.messages ?? [])
-      .filter((msg) => msgContent(msg))
+      .filter(
+        (msg) =>
+          msgContent(msg) ||
+          msg.mediaUrl ||
+          (msg.attachments && msg.attachments.length > 0),
+      )
       .map((msg) => {
         let assistant: boolean;
         if (typeof msg.isAssistant === "boolean") {
@@ -521,6 +605,10 @@ export default function ChatPage() {
           agentName: assistant && agentLabel ? agentLabel : null,
           text: msgContent(msg),
           timestamp: msgTime(msg),
+          type: msg.type,
+          mediaUrl: msg.mediaUrl,
+          mediaMetadata: msg.mediaMetadata,
+          attachments: msg.attachments,
         };
       });
   }, [selectedChat]);
@@ -673,13 +761,116 @@ export default function ChatPage() {
     );
   }
 
+  // ── File upload & recording helpers ───────────────────────────────────────
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  const uploadFile = async (file: File): Promise<AttachmentData> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success)
+      throw new Error(data.error || "Upload failed");
+    return data.data as AttachmentData;
+  };
+
+  const handleFileSelect =
+    (type: "image" | "document") =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const previewUrl =
+        type === "image" ? URL.createObjectURL(file) : undefined;
+      setPendingAttachments((prev) => [...prev, { file, previewUrl, type }]);
+      e.target.value = "";
+    };
+
+  const removeAttachment = (index: number) => {
+    setPendingAttachments((prev) => {
+      const next = [...prev];
+      if (next[index].previewUrl) URL.revokeObjectURL(next[index].previewUrl!);
+      next.splice(index, 1);
+      return next;
+    });
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const file = new File([blob], `voice_${Date.now()}.webm`, {
+          type: "audio/webm",
+        });
+        const previewUrl = URL.createObjectURL(blob);
+        setPendingAttachments((prev) => [
+          ...prev,
+          { file, previewUrl, type: "audio" },
+        ]);
+        setIsRecording(false);
+        setRecordingDuration(0);
+      };
+      mr.start(250);
+      mediaRecorderRef.current = mr;
+      setIsRecording(true);
+      setRecordingDuration(0);
+      recordingTimerRef.current = setInterval(
+        () => setRecordingDuration((d) => d + 1),
+        1000,
+      );
+    } catch {
+      toast.error("Microphone access denied.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  };
+
   // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = async () => {
-    if (!message.trim() || !humanRequested || isSending) return;
+    if (!humanRequested || isSending) return;
+    if (!message.trim() && pendingAttachments.length === 0) return;
 
     const msgText = message.trim();
     setIsSending(true);
     setMessage("");
+    const attsCopy = [...pendingAttachments];
+    setPendingAttachments([]);
+
+    // Upload attachments first
+    let uploaded: AttachmentData[] = [];
+    for (const att of attsCopy) {
+      try {
+        const result = await uploadFile(att.file);
+        uploaded.push(result);
+      } catch {
+        toast.error(`Failed to upload ${att.file.name}`);
+        setIsSending(false);
+        setPendingAttachments(attsCopy);
+        return;
+      }
+    }
 
     // Optimistic update
     const tempId = `temp_${Date.now()}`;
@@ -690,6 +881,7 @@ export default function ChatPage() {
       text: msgText,
       timestamp: new Date(),
       isPending: true,
+      attachments: uploaded.length > 0 ? uploaded : undefined,
     };
     setPendingMessages((prev) => [...prev, optimistic]);
 
@@ -709,6 +901,7 @@ export default function ChatPage() {
           agentName: "RM Agent",
           sessionId: selectedChat?.sessionId,
           chatId: selectedId,
+          attachments: uploaded.length > 0 ? uploaded : undefined,
         }),
       });
 
@@ -757,74 +950,193 @@ export default function ChatPage() {
 
   const displayUserName =
     (user as any).displayName || (user as any).name || (user as any).username;
-  const showList = !selectedId;
+  const orgDisplayName: string =
+    selectedOrg?.name ||
+    (user as any).organizationName ||
+    (user as any).orgName ||
+    (user as any).organization?.name ||
+    "";
   const showConvo = !!selectedId;
 
   return (
     <div className="h-screen w-full flex flex-col bg-background font-sans overflow-hidden">
       {/* ── Header ── */}
-      <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-3 md:px-6 shrink-0 z-10">
-        <div className="flex items-center gap-2 min-w-0">
-          <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain shrink-0" />
-          <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight whitespace-nowrap">
+      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 md:px-6 shrink-0">
+        {/* Left: Menu + Logo */}
+        <div className="flex items-center gap-3">
+          <button
+            className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-primary/10 transition-colors"
+            aria-label="Menu"
+          >
+            <Menu className="w-5 h-5 text-muted-foreground" />
+          </button>
+          <Logo className="w-6 h-6 object-contain shrink-0" />
+          <span className="hidden lg:block font-bold text-primary font-['Plus_Jakarta_Sans'] text-base tracking-tight">
             Act Angel AI
           </span>
-          {isSuperAdmin && selectedOrg && (
-            <span className="hidden sm:flex ml-1 items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium max-w-[140px] md:max-w-none">
-              <Building2 className="w-3 h-3 shrink-0" />
-              <span className="truncate">{selectedOrg.name}</span>
-            </span>
-          )}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        {/* Right: Org selector + Bell + Avatar */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Org selector — bordered pill */}
+          {orgDisplayName && (
             <button
-              className="flex items-center gap-2 rounded-full hover:bg-accent px-1.5 py-1 transition-colors shrink-0"
-              aria-label="User menu"
+              onClick={
+                isSuperAdmin && selectedOrg ? handleSwitchOrg : undefined
+              }
+              className={`hidden sm:flex items-center gap-2 h-9 px-3 border border-border rounded-lg text-sm font-medium transition-colors ${
+                isSuperAdmin && selectedOrg
+                  ? "hover:bg-primary/10 hover:text-primary cursor-pointer"
+                  : "cursor-default"
+              }`}
             >
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
-                  {getInitials(displayUserName || "U")}
-                </AvatarFallback>
-              </Avatar>
-              <span className="hidden md:block text-sm font-medium text-foreground pr-1">
-                {displayUserName}
-              </span>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="font-normal">
-              <p className="text-sm font-semibold truncate">
-                {displayUserName}
-              </p>
-              {(user as any).email && (
-                <p className="text-xs text-muted-foreground truncate">
-                  {(user as any).email}
-                </p>
+              {/* <Building2 className="w-4 h-4 text-muted-foreground shrink-0" /> */}
+              <span className="max-w-[160px] truncate">{orgDisplayName}</span>
+              {isSuperAdmin && selectedOrg && (
+                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               )}
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setLocation("/profile")}>
-              <User className="mr-2 h-4 w-4" />
-              Profile
-            </DropdownMenuItem>
-            {isSuperAdmin && selectedOrg && (
-              <DropdownMenuItem onClick={handleSwitchOrg}>
-                <Building2 className="mr-2 h-4 w-4" />
-                Switch Organisation
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => logout()}
-              className="text-destructive focus:text-destructive"
+            </button>
+          )}
+
+          {/* Notification Bell — bordered button + Popover panel */}
+          <Popover open={showNotifications} onOpenChange={setShowNotifications}>
+            <PopoverTrigger asChild>
+              <button
+                className="relative h-9 w-9 flex items-center justify-center border border-border rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
+                aria-label="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex items-center justify-center h-4 min-w-4 px-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold leading-none">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              sideOffset={8}
+              className="w-72 md:w-80 p-0 rounded-xl overflow-hidden"
             >
-              <LogOut className="mr-2 h-4 w-4" />
-              Log Out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <span className="font-semibold text-sm font-['Plus_Jakarta_Sans']">
+                  Notifications
+                </span>
+                <button
+                  onClick={() => setShowNotifications(false)}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="overflow-y-auto max-h-72">
+                {notificationsList.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    You have no new notifications.
+                  </div>
+                ) : (
+                  notificationsList.map((notif) => (
+                    <div
+                      key={notif.id}
+                      className={`px-4 py-3 border-b border-border/50 last:border-0 ${
+                        !notif.read ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      {notif.title && (
+                        <p className="text-xs font-semibold text-foreground mb-0.5">
+                          {notif.title}
+                        </p>
+                      )}
+                      <p className="text-xs text-foreground leading-relaxed">
+                        {notif.message}
+                      </p>
+                      <div className="flex items-center justify-between mt-1.5 gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(notif.createdAt).toLocaleString()}
+                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!notif.read && (
+                            <button
+                              onClick={() => markNotifRead(notif.id)}
+                              className="text-[10px] text-primary hover:underline font-medium"
+                            >
+                              Mark read
+                            </button>
+                          )}
+                          <button
+                            onClick={() => dismissNotif(notif.id)}
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label="Dismiss"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              {notificationsList.some((n) => !n.read) && (
+                <div className="px-4 py-2.5 border-t border-border">
+                  <button
+                    onClick={markAllRead}
+                    className="w-full text-xs text-primary hover:underline font-medium"
+                  >
+                    Mark All as Read
+                  </button>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
+
+          {/* Avatar — circular, opens user dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="h-9 w-9 rounded-full border-2 border-border hover:border-primary hover:ring-2 hover:ring-primary/20 transition-colors overflow-hidden shrink-0"
+                aria-label="User menu"
+              >
+                <Avatar className="h-full w-full">
+                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold rounded-full">
+                    {getInitials(displayUserName || "U")}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="font-normal">
+                <p className="text-sm font-semibold truncate">
+                  {displayUserName}
+                </p>
+                {(user as any).email && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {(user as any).email}
+                  </p>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setLocation("/profile")}>
+                <User className="mr-2 h-4 w-4" />
+                Profile
+              </DropdownMenuItem>
+              {isSuperAdmin && selectedOrg && (
+                <DropdownMenuItem onClick={handleSwitchOrg}>
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Switch Organisation
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => logout()}
+                className="text-destructive focus:text-destructive"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Log Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       {/* ── Main body ── */}
@@ -833,7 +1145,7 @@ export default function ChatPage() {
         <aside
           className={`
             bg-card border-r border-border flex flex-col shrink-0
-            w-full md:w-80
+            w-full md:w-72 lg:w-80
             ${showConvo ? "hidden md:flex" : "flex"}
           `}
         >
@@ -886,8 +1198,10 @@ export default function ChatPage() {
                     <button
                       key={log.id}
                       onClick={() => setSelectedId(log.id)}
-                      className={`w-full p-3 md:p-4 flex items-start gap-3 text-left transition-colors hover:bg-accent/50 active:bg-accent/70 ${
-                        selectedId === log.id ? "bg-accent hover:bg-accent" : ""
+                      className={`w-full p-3 md:p-4 flex items-start gap-3 text-left transition-colors hover:bg-primary/10 active:bg-primary/15 ${
+                        selectedId === log.id
+                          ? "bg-primary/10 hover:bg-primary/10"
+                          : ""
                       }`}
                     >
                       <Avatar className="h-10 w-10 shrink-0">
@@ -1089,9 +1403,77 @@ export default function ChatPage() {
                                 {msg.isPending ? " (sending…)" : ""}
                               </div>
                             )}
-                            <p className="leading-relaxed whitespace-pre-wrap break-words">
-                              {highlightText(msg.text)}
-                            </p>
+                            {/* RM-sent attachments */}
+                            {msg.attachments?.map((att, i) => (
+                              <div key={i} className="mb-1.5">
+                                {att.type === "image" ? (
+                                  <img
+                                    src={att.url}
+                                    alt={att.caption || att.filename}
+                                    className="max-w-[220px] rounded-lg"
+                                  />
+                                ) : att.type === "audio" ? (
+                                  <audio
+                                    controls
+                                    src={att.url}
+                                    className="h-8 max-w-[200px]"
+                                  />
+                                ) : (
+                                  <a
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 underline text-xs opacity-90"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                                    {att.filename}
+                                    {att.size > 0 && (
+                                      <span className="opacity-70">
+                                        ({formatFileSize(att.size)})
+                                      </span>
+                                    )}
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                            {/* Customer-sent media (WhatsApp) */}
+                            {!msg.attachments?.length && msg.mediaUrl && (
+                              <div className="mb-1.5">
+                                {msg.type === "image" ? (
+                                  <img
+                                    src={msg.mediaUrl}
+                                    alt={msg.mediaMetadata?.fileName || "Image"}
+                                    className="max-w-[220px] rounded-lg"
+                                  />
+                                ) : msg.type === "voice" ||
+                                  msg.mediaMetadata?.mimeType?.startsWith(
+                                    "audio",
+                                  ) ? (
+                                  <audio
+                                    controls
+                                    src={msg.mediaUrl}
+                                    className="h-8 max-w-[200px]"
+                                  />
+                                ) : (
+                                  <a
+                                    href={msg.mediaUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1.5 underline text-xs opacity-90"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                                    {msg.mediaMetadata?.fileName ||
+                                      "Download file"}
+                                  </a>
+                                )}
+                              </div>
+                            )}
+                            {/* Text body */}
+                            {msg.text && (
+                              <p className="leading-relaxed whitespace-pre-wrap break-words">
+                                {highlightText(msg.text)}
+                              </p>
+                            )}
                             {msg.timestamp && isValid(msg.timestamp) && (
                               <div className="text-xs opacity-50 mt-1 text-right">
                                 {msg.timestamp.toLocaleTimeString()}
@@ -1121,15 +1503,104 @@ export default function ChatPage() {
               </div>
 
               {/* Input footer */}
-              <div className="bg-card border-t border-border px-3 md:px-4 py-2.5 md:py-3 shrink-0">
-                <div className="flex items-center gap-2">
+              <div className="bg-card border-t border-border px-3 md:px-4 py-2 md:py-2.5 shrink-0">
+                {/* Pending attachment previews */}
+                {pendingAttachments.length > 0 && (
+                  <div className="flex gap-2 mb-2 flex-wrap">
+                    {pendingAttachments.map((att, i) => (
+                      <div
+                        key={i}
+                        className="relative flex items-center gap-1.5 bg-muted rounded-lg px-2 py-1.5 text-xs max-w-[160px]"
+                      >
+                        {att.type === "image" && att.previewUrl ? (
+                          <img
+                            src={att.previewUrl}
+                            alt="preview"
+                            className="h-7 w-7 object-cover rounded shrink-0"
+                          />
+                        ) : att.type === "audio" ? (
+                          <Mic className="w-3.5 h-3.5 text-primary shrink-0" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                        )}
+                        <span className="truncate">{att.file.name}</span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                          onClick={() => removeAttachment(i)}
+                          aria-label="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Recording bar */}
+                {isRecording && (
+                  <div className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-red-50 dark:bg-red-950/30 rounded-lg">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                    <span className="text-xs font-medium text-red-600 dark:text-red-400">
+                      Recording{" "}
+                      {Math.floor(recordingDuration / 60)
+                        .toString()
+                        .padStart(2, "0")}
+                      :{(recordingDuration % 60).toString().padStart(2, "0")}
+                    </span>
+                    <button
+                      type="button"
+                      className="ml-auto text-red-600 hover:text-red-700 transition-colors"
+                      onClick={stopRecording}
+                      aria-label="Stop recording"
+                    >
+                      <StopCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5">
+                  {/* Attachment button */}
+                  {humanRequested && !isRecording && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="shrink-0 h-11 w-11 md:h-9 md:w-9"
+                          aria-label="Attach file"
+                        >
+                          <Paperclip className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        side="top"
+                        align="start"
+                        className="w-36"
+                      >
+                        <DropdownMenuItem
+                          onClick={() => imageInputRef.current?.click()}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Image
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => documentInputRef.current?.click()}
+                        >
+                          <FileText className="mr-2 h-4 w-4" />
+                          Document
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
                   <Input
                     placeholder={
                       humanRequested
                         ? "Type your response as RM…"
                         : "Message (AI will respond)"
                     }
-                    className="flex-1 h-9 text-sm"
+                    className="flex-1 h-11 md:h-9 text-sm"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
@@ -1138,21 +1609,39 @@ export default function ChatPage() {
                         sendMessage();
                       }
                     }}
-                    disabled={!humanRequested || isSending}
+                    disabled={!humanRequested || isSending || isRecording}
                   />
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled
-                    className="shrink-0"
-                  >
-                    {/* <Mic className="w-4 h-4 md:w-5 md:h-5" /> */}
-                  </Button>
+
+                  {/* Mic button */}
+                  {humanRequested && (
+                    <Button
+                      size="icon"
+                      variant={isRecording ? "destructive" : "ghost"}
+                      className="shrink-0 h-11 w-11 md:h-9 md:w-9"
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={isSending}
+                      aria-label={
+                        isRecording ? "Stop recording" : "Record voice message"
+                      }
+                    >
+                      {isRecording ? (
+                        <StopCircle className="w-4 h-4" />
+                      ) : (
+                        <Mic className="w-4 h-4" />
+                      )}
+                    </Button>
+                  )}
+
                   <Button
                     size="icon"
                     onClick={sendMessage}
-                    disabled={!humanRequested || !message.trim() || isSending}
-                    className="shrink-0"
+                    disabled={
+                      !humanRequested ||
+                      (!message.trim() && pendingAttachments.length === 0) ||
+                      isSending ||
+                      isRecording
+                    }
+                    className="shrink-0 h-11 w-11 md:h-9 md:w-9"
                   >
                     {isSending ? (
                       <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
@@ -1161,6 +1650,7 @@ export default function ChatPage() {
                     )}
                   </Button>
                 </div>
+
                 {humanRequested ? (
                   <p className="text-xs text-green-600 dark:text-green-400 mt-1.5 text-center leading-snug">
                     ✅ Human mode active — your responses go directly to the
@@ -1172,6 +1662,22 @@ export default function ChatPage() {
                     customer needs to request a human agent.
                   </p>
                 )}
+
+                {/* Hidden file inputs */}
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  className="hidden"
+                  onChange={handleFileSelect("image")}
+                />
+                <input
+                  ref={documentInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={handleFileSelect("document")}
+                />
               </div>
             </>
           )}

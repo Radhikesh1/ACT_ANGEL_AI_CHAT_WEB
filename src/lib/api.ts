@@ -102,6 +102,55 @@ export function useUpdateProfile(options?: {
   });
 }
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface Notification {
+  id: string;
+  title?: string;
+  message: string;
+  type?: string;
+  read: boolean;
+  createdAt: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+}
+
+export function useGetNotifications(options?: {
+  query?: Partial<UseQueryOptions<unknown, ApiError, Notification[]>>;
+}) {
+  return useQuery<unknown, ApiError, Notification[]>({
+    queryKey: ["notifications"],
+    queryFn: () => fetchJson("/api/notifications"),
+    select: (data) =>
+      Array.isArray(data)
+        ? (data as Notification[])
+        : ((data as any)?.notifications ??
+          (data as any)?.data ??
+          []) as Notification[],
+    ...options?.query,
+  });
+}
+
+export function useMarkNotificationRead(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, string>>;
+}) {
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (id) =>
+      fetchJson(`/api/notifications/${id}/read`, { method: "PATCH" }),
+    ...options?.mutation,
+  });
+}
+
+export function useDeleteNotification(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, string>>;
+}) {
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (id) =>
+      fetchJson(`/api/notifications/${id}`, { method: "DELETE" }),
+    ...options?.mutation,
+  });
+}
+
 // ── Chat Logs ─────────────────────────────────────────────────────────────────
 
 export interface ChatLogsParams {
