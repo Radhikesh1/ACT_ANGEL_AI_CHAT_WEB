@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useLocation } from "wouter";
 import {
   Search,
   LogOut,
@@ -6,13 +7,20 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronLeft,
-  Mic,
   Send,
   Building2,
-  RefreshCw,
   ArrowDown,
   Headphones,
+  User,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   useGetMe,
   useLogout,
@@ -20,6 +28,7 @@ import {
   getGetChatLogsQueryKey,
   ApiError,
 } from "@/lib/api";
+import { Logo } from "@/components/Logo";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -95,7 +104,13 @@ function displayName(item: ActChatItem): string {
 
 function getInitials(name: string): string {
   if (!name) return "?";
-  return name.split(" ").filter(Boolean).map((n) => n[0]).join("").toUpperCase().substring(0, 2);
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .substring(0, 2);
 }
 
 function msgContent(msg: ActMessage): string {
@@ -126,7 +141,9 @@ function msgTime(msg: ActMessage): Date | null {
       const d = parseISO(msg.createdAt);
       if (isValid(d)) return d;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
@@ -135,7 +152,12 @@ function isUserMsg(msg: ActMessage, recipientNumber?: string): boolean {
   if (msg.role === "assistant") return false;
   if (msg.direction === "inbound") return true;
   if (msg.direction === "outbound") return false;
-  if (msg.from && recipientNumber && msg.from.replace(/\D/g, "") === recipientNumber.replace(/\D/g, "")) return true;
+  if (
+    msg.from &&
+    recipientNumber &&
+    msg.from.replace(/\D/g, "") === recipientNumber.replace(/\D/g, "")
+  )
+    return true;
   return false;
 }
 
@@ -160,7 +182,9 @@ function loadStoredOrg(): { id: string; name: string } | null {
   try {
     const raw = localStorage.getItem(ORG_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // ── Org Picker ───────────────────────────────────────────────────────────────
@@ -197,10 +221,17 @@ function OrgPicker({
 
         const list: Organisation[] = Array.isArray(data)
           ? data
-          : ((data as any).items ?? (data as any).data ?? (data as any).organizations ?? []);
+          : ((data as any).items ??
+            (data as any).data ??
+            (data as any).organizations ??
+            []);
         setOrgs(list);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load organisations"))
+      .catch((e) =>
+        setError(
+          e instanceof Error ? e.message : "Failed to load organisations",
+        ),
+      )
       .finally(() => setLoading(false));
   }, []);
 
@@ -208,12 +239,17 @@ function OrgPicker({
     <div className="h-screen w-full flex flex-col bg-background">
       <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-4 md:px-6 shrink-0">
         <div className="flex items-center gap-2 md:gap-3">
-          <img src="/assets/Logo_Dark.png" alt="Act Angel AI" className="w-6 h-6 md:w-7 md:h-7 object-contain" />
+          <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain" />
           <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight">
             Act Angel AI
           </span>
         </div>
-        <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground hover:text-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onLogout}
+          className="text-muted-foreground hover:text-foreground"
+        >
           <LogOut className="w-4 h-4 sm:mr-2" />
           <span className="hidden sm:inline">Log Out</span>
         </Button>
@@ -226,7 +262,8 @@ function OrgPicker({
               Select Organisation
             </h1>
             <p className="text-muted-foreground text-sm">
-              You are logged in as Super Admin. Choose which organisation to manage.
+              You are logged in as Super Admin. Choose which organisation to
+              manage.
             </p>
           </div>
 
@@ -276,7 +313,9 @@ function OrgPicker({
                       {org.name}
                     </div>
                     {org.slug && (
-                      <div className="text-xs text-muted-foreground mt-0.5">{org.slug}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {org.slug}
+                      </div>
                     )}
                   </div>
                 </button>
@@ -293,6 +332,7 @@ function OrgPicker({
 
 export default function ChatPage() {
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const [listSearch, setListSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -308,9 +348,10 @@ export default function ChatPage() {
   const [showScrollButton, setShowScrollButton] = useState(false);
 
   // Org selection state for Super Admin
-  const [selectedOrg, setSelectedOrg] = useState<{ id: string; name: string } | null>(
-    loadStoredOrg
-  );
+  const [selectedOrg, setSelectedOrg] = useState<{
+    id: string;
+    name: string;
+  } | null>(loadStoredOrg);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -325,7 +366,10 @@ export default function ChatPage() {
   // Auth guard
   const { data: user, error: userError } = useGetMe();
   useEffect(() => {
-    if (userError instanceof ApiError && [401, 403].includes(userError.response.status)) {
+    if (
+      userError instanceof ApiError &&
+      [401, 403].includes(userError.response.status)
+    ) {
       window.location.href = "/login";
     }
   }, [userError]);
@@ -340,10 +384,15 @@ export default function ChatPage() {
   });
 
   // Derived values
-  const isSuperAdmin = !!user && ((user as any).role === "SAD" || (user as any).role === "SUPER_ADMIN");
-  const userOrgId = user ? ((user as any).organizationId ?? (user as any).orgId ?? null) : null;
+  const isSuperAdmin =
+    !!user &&
+    ((user as any).role === "SAD" || (user as any).role === "SUPER_ADMIN");
+  const userOrgId = user
+    ? ((user as any).organizationId ?? (user as any).orgId ?? null)
+    : null;
   const orgId: string | null = userOrgId ?? selectedOrg?.id ?? null;
-  const needsOrgSelection = !!user && !!isSuperAdmin && !userOrgId && !selectedOrg;
+  const needsOrgSelection =
+    !!user && !!isSuperAdmin && !userOrgId && !selectedOrg;
 
   function handleOrgSelect(org: Organisation) {
     const stored = { id: org.id, name: org.name };
@@ -376,12 +425,15 @@ export default function ChatPage() {
     };
   }, [user, orgId, contactId, mobile]);
 
-  const { data: chatLogsResponse, isLoading: isLoadingLogs } = useGetChatLogs(queryParams, {
-    query: {
-      enabled: !!queryParams,
-      queryKey: getGetChatLogsQueryKey(queryParams),
+  const { data: chatLogsResponse, isLoading: isLoadingLogs } = useGetChatLogs(
+    queryParams,
+    {
+      query: {
+        enabled: !!queryParams,
+        queryKey: getGetChatLogsQueryKey(queryParams),
+      },
     },
-  });
+  );
 
   const chatLogs: ActChatItem[] = useMemo(() => {
     if (!chatLogsResponse) return [];
@@ -396,9 +448,10 @@ export default function ChatPage() {
   }, [chatLogsResponse, chatLogs.length]);
 
   const filteredLogs = useMemo(
-    () => chatLogs.filter((log) =>
-      displayName(log).toLowerCase().includes(listSearch.toLowerCase())
-    ),
+    () =>
+      chatLogs.filter((log) =>
+        displayName(log).toLowerCase().includes(listSearch.toLowerCase()),
+      ),
     [chatLogs, listSearch],
   );
 
@@ -409,13 +462,24 @@ export default function ChatPage() {
       const digits = (s: string) => s.replace(/\D/g, "");
       const target = digits(mobile);
       const match = chatLogs.find(
-        (log) => log.recipientNumber && digits(log.recipientNumber).includes(target),
+        (log) =>
+          log.recipientNumber && digits(log.recipientNumber).includes(target),
       );
-      if (match) { autoSelectedRef.current = true; setSelectedId(match.id); }
+      if (match) {
+        autoSelectedRef.current = true;
+        setSelectedId(match.id);
+      }
     } else if (contactId) {
-      const match = chatLogs.find((log) => log.contactId === contactId || log.id === contactId);
-      if (match) { autoSelectedRef.current = true; setSelectedId(match.id); }
-      else if (filteredLogs.length > 0) { autoSelectedRef.current = true; setSelectedId(filteredLogs[0].id); }
+      const match = chatLogs.find(
+        (log) => log.contactId === contactId || log.id === contactId,
+      );
+      if (match) {
+        autoSelectedRef.current = true;
+        setSelectedId(match.id);
+      } else if (filteredLogs.length > 0) {
+        autoSelectedRef.current = true;
+        setSelectedId(filteredLogs[0].id);
+      }
     }
   }, [chatLogs, filteredLogs, contactId, mobile]);
 
@@ -449,7 +513,8 @@ export default function ChatPage() {
         } else {
           assistant = !isUserMsg(msg, selectedChat.recipientNumber);
         }
-        const agentLabel = msg.agentName ?? (isHumanAgent(msg) ? "RM Agent" : null);
+        const agentLabel =
+          msg.agentName ?? (isHumanAgent(msg) ? "RM Agent" : null);
         return {
           id: msg.id,
           isAssistant: assistant,
@@ -463,7 +528,9 @@ export default function ChatPage() {
   // Merge server messages with pending (optimistic) messages, deduplicating by text
   const displayMessages: DisplayMessage[] = useMemo(() => {
     const serverTexts = new Set(serverDisplayMessages.map((m) => m.text));
-    const uniquePending = pendingMessages.filter((p) => !serverTexts.has(p.text));
+    const uniquePending = pendingMessages.filter(
+      (p) => !serverTexts.has(p.text),
+    );
     return [...serverDisplayMessages, ...uniquePending];
   }, [serverDisplayMessages, pendingMessages]);
 
@@ -481,7 +548,9 @@ export default function ChatPage() {
         await queryClient.invalidateQueries({
           queryKey: getGetChatLogsQueryKey(queryParams),
         });
-      } catch { /* ignore */ } finally {
+      } catch {
+        /* ignore */
+      } finally {
         setIsAutoRefreshing(false);
         running = false;
       }
@@ -559,16 +628,28 @@ export default function ChatPage() {
 
   const totalMatches = searchMatches.length;
 
-  useEffect(() => { setCurrentMatchIndex(0); }, [transcriptSearch]);
+  useEffect(() => {
+    setCurrentMatchIndex(0);
+  }, [transcriptSearch]);
 
   useEffect(() => {
     if (searchMatches.length === 0) return;
     const match = searchMatches[currentMatchIndex];
-    if (match) messageRefs.current[match.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (match)
+      messageRefs.current[match.id]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
   }, [currentMatchIndex, searchMatches]);
 
-  const goToNextMatch = useCallback(() => setCurrentMatchIndex((i) => (i + 1) % totalMatches), [totalMatches]);
-  const goToPrevMatch = useCallback(() => setCurrentMatchIndex((i) => (i - 1 + totalMatches) % totalMatches), [totalMatches]);
+  const goToNextMatch = useCallback(
+    () => setCurrentMatchIndex((i) => (i + 1) % totalMatches),
+    [totalMatches],
+  );
+  const goToPrevMatch = useCallback(
+    () => setCurrentMatchIndex((i) => (i - 1 + totalMatches) % totalMatches),
+    [totalMatches],
+  );
 
   function highlightText(text: string) {
     const q = transcriptSearch.trim();
@@ -578,8 +659,15 @@ export default function ChatPage() {
       <>
         {parts.map((part, i) =>
           part.toLowerCase() === q.toLowerCase() ? (
-            <mark key={i} className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5">{part}</mark>
-          ) : part
+            <mark
+              key={i}
+              className="bg-yellow-200 text-yellow-900 rounded-sm px-0.5"
+            >
+              {part}
+            </mark>
+          ) : (
+            part
+          ),
         )}
       </>
     );
@@ -625,7 +713,11 @@ export default function ChatPage() {
       });
 
       let data: any = {};
-      try { data = await res.json(); } catch { /* ignore non-JSON */ }
+      try {
+        data = await res.json();
+      } catch {
+        /* ignore non-JSON */
+      }
 
       if (res.ok && data.success !== false) {
         toast.success("Message sent!");
@@ -633,7 +725,9 @@ export default function ChatPage() {
         setPendingMessages((prev) => prev.filter((m) => m.id !== tempId));
         // Trigger immediate refresh to confirm
         if (queryParams) {
-          queryClient.invalidateQueries({ queryKey: getGetChatLogsQueryKey(queryParams) });
+          queryClient.invalidateQueries({
+            queryKey: getGetChatLogsQueryKey(queryParams),
+          });
         }
       } else {
         setPendingMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -661,7 +755,8 @@ export default function ChatPage() {
     return <OrgPicker onSelect={handleOrgSelect} onLogout={() => logout()} />;
   }
 
-  const displayUserName = (user as any).displayName || (user as any).name || (user as any).username;
+  const displayUserName =
+    (user as any).displayName || (user as any).name || (user as any).username;
   const showList = !selectedId;
   const showConvo = !!selectedId;
 
@@ -670,41 +765,70 @@ export default function ChatPage() {
       {/* ── Header ── */}
       <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-3 md:px-6 shrink-0 z-10">
         <div className="flex items-center gap-2 min-w-0">
-
-          <img src="/assets/Logo_Dark.png" alt="Act Angel AI" className="w-6 h-6 md:w-7 md:h-7 object-contain shrink-0" />
+          <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain shrink-0" />
           <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight whitespace-nowrap">
             Act Angel AI
           </span>
-
           {isSuperAdmin && selectedOrg && (
-            <button
-              onClick={handleSwitchOrg}
-              className="hidden sm:flex ml-1 md:ml-2 items-center gap-1 md:gap-1.5 px-2 md:px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors max-w-[140px] md:max-w-none"
-              title="Click to switch organisation"
-            >
-              <Building2 className="w-3 h-3 md:w-3.5 md:h-3.5 shrink-0" />
+            <span className="hidden sm:flex ml-1 items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium max-w-[140px] md:max-w-none">
+              <Building2 className="w-3 h-3 shrink-0" />
               <span className="truncate">{selectedOrg.name}</span>
-            </button>
+            </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1 md:gap-3 shrink-0">
-          <span className="hidden md:block text-sm font-medium text-foreground">{displayUserName}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => logout()}
-            className="text-muted-foreground hover:text-foreground px-2 md:px-3"
-          >
-            <LogOut className="w-4 h-4 md:mr-2" />
-            <span className="hidden md:inline">Log Out</span>
-          </Button>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex items-center gap-2 rounded-full hover:bg-accent px-1.5 py-1 transition-colors shrink-0"
+              aria-label="User menu"
+            >
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold">
+                  {getInitials(displayUserName || "U")}
+                </AvatarFallback>
+              </Avatar>
+              <span className="hidden md:block text-sm font-medium text-foreground pr-1">
+                {displayUserName}
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="font-normal">
+              <p className="text-sm font-semibold truncate">
+                {displayUserName}
+              </p>
+              {(user as any).email && (
+                <p className="text-xs text-muted-foreground truncate">
+                  {(user as any).email}
+                </p>
+              )}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setLocation("/profile")}>
+              <User className="mr-2 h-4 w-4" />
+              Profile
+            </DropdownMenuItem>
+            {isSuperAdmin && selectedOrg && (
+              <DropdownMenuItem onClick={handleSwitchOrg}>
+                <Building2 className="mr-2 h-4 w-4" />
+                Switch Organisation
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => logout()}
+              className="text-destructive focus:text-destructive"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Log Out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       {/* ── Main body ── */}
       <main className="flex-1 flex overflow-hidden">
-
         {/* ── Left Panel: Chat List ── */}
         <aside
           className={`
@@ -715,8 +839,13 @@ export default function ChatPage() {
         >
           <div className="p-3 md:p-4 border-b border-border">
             <div className="flex items-center justify-between mb-3 md:mb-4">
-              <h2 className="font-semibold text-base md:text-lg font-['Plus_Jakarta_Sans']">Chats</h2>
-              <Badge variant="secondary" className="bg-secondary text-secondary-foreground">
+              <h2 className="font-semibold text-base md:text-lg font-['Plus_Jakarta_Sans']">
+                Chats
+              </h2>
+              <Badge
+                variant="secondary"
+                className="bg-secondary text-secondary-foreground"
+              >
                 {totalCount}
               </Badge>
             </div>
@@ -782,10 +911,12 @@ export default function ChatPage() {
                           <span className="text-[10px] text-muted-foreground shrink-0 ml-1">
                             {time && isValid(time)
                               ? formatDistanceToNow(time, { addSuffix: true })
-                              : log.date ?? ""}
+                              : (log.date ?? "")}
                           </span>
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">{text}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {text}
+                        </p>
                       </div>
                     </button>
                   );
@@ -805,12 +936,14 @@ export default function ChatPage() {
           {!selectedChat ? (
             <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-4">
               <div className="bg-card p-5 md:p-6 rounded-full shadow-sm mb-4">
-                <img src="/assets/Logo_Dark.png" alt="" className="w-10 h-10 md:w-12 md:h-12 object-contain opacity-40" />
+                <Logo className="w-10 h-10 md:w-12 md:h-12 object-contain opacity-80" />
               </div>
               <h3 className="text-base md:text-lg font-medium text-foreground font-['Plus_Jakarta_Sans'] mb-2">
                 No Conversation Selected
               </h3>
-              <p className="text-sm text-center">Select a conversation from the left to view messages</p>
+              <p className="text-sm text-center">
+                Select a conversation from the left to view messages
+              </p>
             </div>
           ) : (
             <>
@@ -846,9 +979,25 @@ export default function ChatPage() {
                     )}
                     {isAutoRefreshing && (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 text-xs font-medium rounded-full shrink-0">
-                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        <svg
+                          className="animate-spin h-3 w-3"
+                          xmlns="http://www.w3.org/2000/svg"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
                         </svg>
                         Syncing
                       </span>
@@ -857,7 +1006,9 @@ export default function ChatPage() {
                   {selectedChat.recipientNumber && (
                     <span className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
                       <Phone className="w-3 h-3 shrink-0" />
-                      {selectedChat.recipientNumber.replace(/^\d{8}/, match => '*'.repeat(match.length))}
+                      {selectedChat.recipientNumber.replace(/^\d{8}/, (match) =>
+                        "*".repeat(match.length),
+                      )}
                     </span>
                   )}
                 </div>
@@ -880,10 +1031,20 @@ export default function ChatPage() {
                       <span className="text-xs font-medium whitespace-nowrap px-1">
                         {currentMatchIndex + 1}/{totalMatches}
                       </span>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={goToPrevMatch}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={goToPrevMatch}
+                      >
                         <ChevronUp className="w-4 h-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={goToNextMatch}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        onClick={goToNextMatch}
+                      >
                         <ChevronDown className="w-4 h-4" />
                       </Button>
                     </div>
@@ -906,7 +1067,9 @@ export default function ChatPage() {
                       displayMessages.map((msg) => (
                         <div
                           key={msg.id}
-                          ref={(el) => { messageRefs.current[msg.id] = el; }}
+                          ref={(el) => {
+                            messageRefs.current[msg.id] = el;
+                          }}
                           className={`flex ${msg.isAssistant ? "justify-start" : "justify-end"}`}
                         >
                           <div
@@ -921,7 +1084,10 @@ export default function ChatPage() {
                             } ${msg.isPending ? "opacity-70" : ""}`}
                           >
                             {msg.isAssistant && msg.agentName && (
-                              <div className="text-xs opacity-70 mb-1">👤 {msg.agentName}{msg.isPending ? " (sending…)" : ""}</div>
+                              <div className="text-xs opacity-70 mb-1">
+                                👤 {msg.agentName}
+                                {msg.isPending ? " (sending…)" : ""}
+                              </div>
                             )}
                             <p className="leading-relaxed whitespace-pre-wrap break-words">
                               {highlightText(msg.text)}
@@ -958,7 +1124,11 @@ export default function ChatPage() {
               <div className="bg-card border-t border-border px-3 md:px-4 py-2.5 md:py-3 shrink-0">
                 <div className="flex items-center gap-2">
                   <Input
-                    placeholder={humanRequested ? "Type your response as RM…" : "Message (AI will respond)"}
+                    placeholder={
+                      humanRequested
+                        ? "Type your response as RM…"
+                        : "Message (AI will respond)"
+                    }
                     className="flex-1 h-9 text-sm"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
@@ -970,7 +1140,12 @@ export default function ChatPage() {
                     }}
                     disabled={!humanRequested || isSending}
                   />
-                  <Button size="icon" variant="ghost" disabled className="shrink-0">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    disabled
+                    className="shrink-0"
+                  >
                     {/* <Mic className="w-4 h-4 md:w-5 md:h-5" /> */}
                   </Button>
                   <Button
@@ -988,11 +1163,13 @@ export default function ChatPage() {
                 </div>
                 {humanRequested ? (
                   <p className="text-xs text-green-600 dark:text-green-400 mt-1.5 text-center leading-snug">
-                    ✅ Human mode active — your responses go directly to the customer.
+                    ✅ Human mode active — your responses go directly to the
+                    customer.
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-1.5 text-center leading-snug">
-                    💡 This conversation is in AI mode. To respond as RM, the customer needs to request a human agent.
+                    💡 This conversation is in AI mode. To respond as RM, the
+                    customer needs to request a human agent.
                   </p>
                 )}
               </div>

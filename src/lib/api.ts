@@ -62,6 +62,46 @@ export function useLogout(options?: {
   });
 }
 
+export function useChangePassword(options?: {
+  mutation?: Partial<
+    UseMutationOptions<unknown, ApiError, { currentPassword: string; newPassword: string }>
+  >;
+}) {
+  return useMutation<unknown, ApiError, { currentPassword: string; newPassword: string }>({
+    mutationFn: (data) =>
+      fetchJson("/api/profile/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export interface UpdateProfileData {
+  displayName?: string | null;
+  contactNumber?: string | null;
+  birthDate?: string | null;
+  country?: string | null;
+  languages?: string | null;
+  address?: string | null;
+  emergencyContact?: string | null;
+}
+
+export function useUpdateProfile(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, UpdateProfileData>>;
+}) {
+  return useMutation<unknown, ApiError, UpdateProfileData>({
+    mutationFn: (data) =>
+      fetchJson("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Chat Logs ─────────────────────────────────────────────────────────────────
 
 export interface ChatLogsParams {
