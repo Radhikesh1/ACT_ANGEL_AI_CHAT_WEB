@@ -281,7 +281,7 @@ function OrgPicker({
         <div className="flex items-center gap-2 md:gap-3">
           <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain" />
           <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight">
-            Act Angel AI
+            Chat Angel AI
           </span>
         </div>
         <Button
@@ -972,7 +972,7 @@ export default function ChatPage() {
           </button>
           <Logo className="w-6 h-6 object-contain shrink-0" />
           <span className="hidden lg:block font-bold text-primary font-['Plus_Jakarta_Sans'] text-base tracking-tight">
-            Act Angel AI
+            Chat Angel AI
           </span>
         </div>
 

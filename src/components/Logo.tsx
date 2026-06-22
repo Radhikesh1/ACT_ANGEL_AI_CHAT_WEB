@@ -7,7 +7,7 @@ export function Logo({ className = "w-14 h-14" }: { className?: string }) {
       src={
         theme === "dark" ? "/assets/Logo-Light.png" : "/assets/Logo_Dark.png"
       }
-      alt="Act Angel AI"
+      alt="Chat Angel AI"
       className={className}
     />
   );
