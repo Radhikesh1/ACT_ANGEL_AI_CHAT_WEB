@@ -2,6 +2,9 @@ node_modules
 dist
 .git
 .env
-.env.*
-*.local
-.claude
+*.log
+.DS_Store
+coverage
+.vscode
+attached_assets
+temp
