@@ -8,11 +8,9 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Logo } from "@/components/Logo";
 
-function redirectToChat() {
-  // Forward all URL params (contact, mobile, etc.) to /chat.
+function redirectAfterLogin() {
   // Full page reload clears TanStack Query cache — prevents stale-auth redirect loop.
-  const params = window.location.search;
-  window.location.href = params ? `/chat${params}` : "/chat";
+  window.location.href = "/assistants";
 }
 
 export default function LoginPage() {
@@ -28,13 +26,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (existingUser && !hasRedirected.current) {
       hasRedirected.current = true;
-      redirectToChat();
+      redirectAfterLogin();
     }
   }, [existingUser]);
 
   const { mutate: login, isPending } = useLogin({
     mutation: {
-      onSuccess: () => redirectToChat(),
+      onSuccess: () => redirectAfterLogin(),
       onError: (error) => {
         toast.error(
           (error.data as any)?.message ||

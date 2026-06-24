@@ -7,6 +7,9 @@ import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import ChatPage from "@/pages/chat";
 import ProfilePage from "@/pages/profile";
+import AssistantsPage from "@/pages/assistants";
+import AssistantFormPage from "@/pages/assistant-form";
+import NumbersPage from "@/pages/numbers";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +23,10 @@ function Router() {
       <Route path="/login" component={LoginPage} />
       <Route path="/chat" component={ChatPage} />
       <Route path="/profile" component={ProfilePage} />
+      <Route path="/assistants" component={AssistantsPage} />
+      <Route path="/assistants/new" component={AssistantFormPage} />
+      <Route path="/assistants/:id" component={AssistantFormPage} />
+      <Route path="/numbers" component={NumbersPage} />
       <Route component={NotFound} />
     </Switch>
   );
