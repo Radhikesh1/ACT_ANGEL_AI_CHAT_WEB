@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 
 // ── Routes served by the local Python backend ─────────────────────────────────
 // Everything else goes to the Node / production backend.
-const PYTHON_PREFIXES = ["/api/assistants", "/api/numbers", "/api/plivo", "/api/auth", "/api/admin"];
+const PYTHON_PREFIXES = ["/api/assistants", "/api/numbers", "/api/plivo", "/api/auth", "/api/admin", "/api/call-logs"];
 
 function selectTarget(url: string, pythonUrl: string, nodeUrl: string): string {
   return PYTHON_PREFIXES.some((p) => url.startsWith(p)) ? pythonUrl : nodeUrl;

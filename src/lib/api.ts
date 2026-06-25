@@ -202,6 +202,8 @@ export interface Assistant {
   temperature: number;
   business_hours_start: string;
   business_hours_end: string;
+  prefetch_webhook_url: string | null;
+  end_of_call_webhook_url: string | null;
   status: "development" | "production";
   created_at: string;
   updated_at: string;
@@ -217,6 +219,8 @@ export interface AssistantInput {
   temperature?: number;
   business_hours_start?: string;
   business_hours_end?: string;
+  prefetch_webhook_url?: string | null;
+  end_of_call_webhook_url?: string | null;
 }
 
 export function useGetAssistants(options?: {
@@ -303,6 +307,116 @@ export function useUnpublishAssistant(options?: {
   });
 }
 
+// ── Call Logs ─────────────────────────────────────────────────────────────────
+
+export interface CallLogMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface CallCostBreakdown {
+  llm_usd: number;
+  stt_usd: number;
+  phone_usd: number;
+  platform_usd: number;
+  total_usd: number;
+  tokens: { input: number; output: number };
+  rates: {
+    llm_input_per_1m: number;
+    llm_output_per_1m: number;
+    stt_per_min: number;
+    phone_per_min: number;
+    platform_per_min: number;
+  };
+  model: string;
+  duration_min: number;
+}
+
+export interface CallLog {
+  id: string;
+  session_id: string;
+  assistant_id: string | null;
+  assistant_name: string;
+  from_number: string;
+  to_number: string;
+  duration: number;
+  chat: string | null;
+  call_status: string;
+  error_message: string | null;
+  chars_used: number;
+  recording_url: string | null;
+  cost_breakdown: CallCostBreakdown | null;
+  total_cost: number | null;
+  started_at: string;
+  ended_at: string;
+}
+
+export function useGetCallLogs(options?: {
+  query?: Partial<UseQueryOptions<unknown, ApiError, CallLog[]>>;
+}) {
+  return useQuery<unknown, ApiError, CallLog[]>({
+    queryKey: ["call-logs"],
+    queryFn: () => fetchJson("/api/call-logs"),
+    select: (data) => (Array.isArray(data) ? (data as CallLog[]) : []),
+    ...options?.query,
+  });
+}
+
+export function useGetCallLog(
+  id: string | undefined,
+  options?: { query?: Partial<UseQueryOptions<unknown, ApiError, CallLog>> },
+) {
+  return useQuery<unknown, ApiError, CallLog>({
+    queryKey: ["call-logs", id],
+    queryFn: () => fetchJson(`/api/call-logs/${id}`),
+    select: (data) => data as CallLog,
+    enabled: !!id,
+    ...options?.query,
+  });
+}
+
+// ── Plivo Settings ────────────────────────────────────────────────────────────
+
+export interface PlivoSettings {
+  plivo_auth_id: string;
+  plivo_auth_token: string;
+  plivo_phone_number: string;
+  domain: string;
+  source: Record<string, "db" | "env">;
+}
+
+export interface PlivoSettingsInput {
+  plivo_auth_id?: string;
+  plivo_auth_token?: string;
+  plivo_phone_number?: string;
+  domain?: string;
+}
+
+export function useGetPlivoSettings(options?: {
+  query?: Partial<UseQueryOptions<unknown, ApiError, PlivoSettings>>;
+}) {
+  return useQuery<unknown, ApiError, PlivoSettings>({
+    queryKey: ["plivo-settings"],
+    queryFn: () => fetchJson("/api/settings/plivo"),
+    select: (data) => data as PlivoSettings,
+    ...options?.query,
+  });
+}
+
+export function useUpdatePlivoSettings(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, PlivoSettingsInput>>;
+}) {
+  return useMutation<unknown, ApiError, PlivoSettingsInput>({
+    mutationFn: (data) =>
+      fetchJson("/api/settings/plivo", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Phone Numbers ─────────────────────────────────────────────────────────────
 
 export interface PlivoNumber {
@@ -326,6 +440,20 @@ export function useGetNumbers(options?: {
   });
 }
 
+export function useLookupNumber(options?: {
+  mutation?: Partial<UseMutationOptions<PlivoNumber, ApiError, string>>;
+}) {
+  return useMutation<PlivoNumber, ApiError, string>({
+    mutationFn: (number) =>
+      fetchJson("/api/numbers/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ number }),
+      }) as Promise<PlivoNumber>,
+    ...options?.mutation,
+  });
+}
+
 export function useAssignNumber(options?: {
   mutation?: Partial<
     UseMutationOptions<unknown, ApiError, { number: string; assistantId: string }>
@@ -346,6 +474,16 @@ export function useUnassignNumber(options?: {
   return useMutation<unknown, ApiError, string>({
     mutationFn: (number) =>
       fetchJson(`/api/numbers/${encodeURIComponent(number)}/unassign`, { method: "POST" }),
+    ...options?.mutation,
+  });
+}
+
+export function useDeleteNumber(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, string>>;
+}) {
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (number) =>
+      fetchJson(`/api/numbers/${encodeURIComponent(number)}`, { method: "DELETE" }),
     ...options?.mutation,
   });
 }

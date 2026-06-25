@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Bot, Phone, LayoutDashboard, Sun, Moon } from "lucide-react";
+import { Bot, Phone, LayoutDashboard, Sun, Moon, PhoneCall } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import { Logo } from "@/components/Logo";
@@ -9,6 +9,7 @@ import { UserMenu } from "@/components/UserMenu";
 const NAV = [
   { href: "/assistants", label: "Assistants", icon: Bot },
   { href: "/numbers", label: "Phone Numbers", icon: Phone },
+  { href: "/call-logs", label: "Call Logs", icon: PhoneCall },
 ];
 
 interface AdminLayoutProps {
