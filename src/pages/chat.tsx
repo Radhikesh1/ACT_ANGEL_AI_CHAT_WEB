@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   Search,
   LogOut,
@@ -20,6 +20,7 @@ import {
   X,
   Bell,
   Menu,
+  Bot,
 } from "lucide-react";
 import {
   Popover,
@@ -45,6 +46,7 @@ import {
   ApiError,
   type Notification,
 } from "@/lib/api";
+import { AdminLayout } from "@/components/AdminLayout";
 import { Logo } from "@/components/Logo";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -229,13 +231,7 @@ function loadStoredOrg(): { id: string; name: string } | null {
 
 // ── Org Picker ───────────────────────────────────────────────────────────────
 
-function OrgPicker({
-  onSelect,
-  onLogout,
-}: {
-  onSelect: (org: Organisation) => void;
-  onLogout: () => void;
-}) {
+function OrgPicker({ onSelect }: { onSelect: (org: Organisation) => void }) {
   const [orgs, setOrgs] = useState<Organisation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -276,27 +272,8 @@ function OrgPicker({
   }, []);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-background">
-      <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-4 md:px-6 shrink-0">
-        <div className="flex items-center gap-2 md:gap-3">
-          <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain" />
-          <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight">
-            Chat Angel AI
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onLogout}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <LogOut className="w-4 h-4 sm:mr-2" />
-          <span className="hidden sm:inline">Log Out</span>
-        </Button>
-      </header>
-
-      <div className="flex-1 flex items-start md:items-center justify-center p-4 md:p-6 overflow-y-auto">
-        <div className="w-full max-w-lg pt-4 md:pt-0">
+    <div className="flex items-start md:items-center justify-center p-4 md:p-6 overflow-y-auto w-full">
+      <div className="w-full max-w-lg pt-4 md:pt-0">
           <div className="mb-6 md:mb-8">
             <h1 className="text-xl md:text-2xl font-bold font-['Plus_Jakarta_Sans'] text-foreground mb-1">
               Select Organisation
@@ -364,7 +341,6 @@ function OrgPicker({
           )}
         </div>
       </div>
-    </div>
   );
 }
 
@@ -462,10 +438,12 @@ export default function ChatPage() {
       .forEach((n) => markReadMutation(n.id));
   const dismissNotif = (id: string) => deleteNotificationMutation(id);
 
-  // Derived values
+  // Derived values — match any capitalisation / abbreviation the API may use
   const isSuperAdmin =
     !!user &&
-    ((user as any).role === "SAD" || (user as any).role === "SUPER_ADMIN");
+    ["SAD", "SUPER_ADMIN", "SuperAdmin", "super_admin", "superadmin"].includes(
+      ((user as any).role ?? "").toString()
+    );
   const userOrgId = user
     ? ((user as any).organizationId ?? (user as any).orgId ?? null)
     : null;
@@ -938,18 +916,22 @@ export default function ChatPage() {
 
   if (!user) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
+      <AdminLayout>
+        <div className="flex items-center justify-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      </AdminLayout>
     );
   }
 
   if (needsOrgSelection) {
-    return <OrgPicker onSelect={handleOrgSelect} onLogout={() => logout()} />;
+    return (
+      <AdminLayout title="Select Organisation">
+        <OrgPicker onSelect={handleOrgSelect} />
+      </AdminLayout>
+    );
   }
 
-  const displayUserName =
-    (user as any).displayName || (user as any).name || (user as any).username;
   const orgDisplayName: string =
     selectedOrg?.name ||
     (user as any).organizationName ||
@@ -958,189 +940,28 @@ export default function ChatPage() {
     "";
   const showConvo = !!selectedId;
 
+  const orgHeaderChip = orgDisplayName ? (
+    <button
+      onClick={isSuperAdmin && selectedOrg ? handleSwitchOrg : undefined}
+      className={`flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium border border-border transition-colors ${
+        isSuperAdmin && selectedOrg
+          ? "hover:bg-primary/10 hover:text-primary cursor-pointer"
+          : "cursor-default"
+      }`}
+    >
+      <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+      <span className="max-w-[160px] truncate">{orgDisplayName}</span>
+      {isSuperAdmin && selectedOrg && (
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+      )}
+    </button>
+  ) : null;
+
   return (
-    <div className="h-screen w-full flex flex-col bg-background font-sans overflow-hidden">
-      {/* ── Header ── */}
-      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 md:px-6 shrink-0">
-        {/* Left: Menu + Logo */}
-        <div className="flex items-center gap-3">
-          <button
-            className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-primary/10 transition-colors"
-            aria-label="Menu"
-          >
-            <Menu className="w-5 h-5 text-muted-foreground" />
-          </button>
-          <Logo className="w-6 h-6 object-contain shrink-0" />
-          <span className="hidden lg:block font-bold text-primary font-['Plus_Jakarta_Sans'] text-base tracking-tight">
-            Chat Angel AI
-          </span>
-        </div>
-
-        {/* Right: Org selector + Bell + Avatar */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Org selector — bordered pill */}
-          {orgDisplayName && (
-            <button
-              onClick={
-                isSuperAdmin && selectedOrg ? handleSwitchOrg : undefined
-              }
-              className={`hidden sm:flex items-center gap-2 h-9 px-3 border border-border rounded-lg text-sm font-medium transition-colors ${
-                isSuperAdmin && selectedOrg
-                  ? "hover:bg-primary/10 hover:text-primary cursor-pointer"
-                  : "cursor-default"
-              }`}
-            >
-              {/* <Building2 className="w-4 h-4 text-muted-foreground shrink-0" /> */}
-              <span className="max-w-[160px] truncate">{orgDisplayName}</span>
-              {isSuperAdmin && selectedOrg && (
-                <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-              )}
-            </button>
-          )}
-
-          {/* Notification Bell — bordered button + Popover panel */}
-          <Popover open={showNotifications} onOpenChange={setShowNotifications}>
-            <PopoverTrigger asChild>
-              <button
-                className="relative h-9 w-9 flex items-center justify-center border border-border rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
-                aria-label="Notifications"
-              >
-                <Bell className="w-4 h-4" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex items-center justify-center h-4 min-w-4 px-0.5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold leading-none">
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              sideOffset={8}
-              className="w-72 md:w-80 p-0 rounded-xl overflow-hidden"
-            >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <span className="font-semibold text-sm font-['Plus_Jakarta_Sans']">
-                  Notifications
-                </span>
-                <button
-                  onClick={() => setShowNotifications(false)}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="overflow-y-auto max-h-72">
-                {notificationsList.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-                    You have no new notifications.
-                  </div>
-                ) : (
-                  notificationsList.map((notif) => (
-                    <div
-                      key={notif.id}
-                      className={`px-4 py-3 border-b border-border/50 last:border-0 ${
-                        !notif.read ? "bg-primary/5" : ""
-                      }`}
-                    >
-                      {notif.title && (
-                        <p className="text-xs font-semibold text-foreground mb-0.5">
-                          {notif.title}
-                        </p>
-                      )}
-                      <p className="text-xs text-foreground leading-relaxed">
-                        {notif.message}
-                      </p>
-                      <div className="flex items-center justify-between mt-1.5 gap-2">
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(notif.createdAt).toLocaleString()}
-                        </span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {!notif.read && (
-                            <button
-                              onClick={() => markNotifRead(notif.id)}
-                              className="text-[10px] text-primary hover:underline font-medium"
-                            >
-                              Mark read
-                            </button>
-                          )}
-                          <button
-                            onClick={() => dismissNotif(notif.id)}
-                            className="text-muted-foreground hover:text-destructive transition-colors"
-                            aria-label="Dismiss"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {notificationsList.some((n) => !n.read) && (
-                <div className="px-4 py-2.5 border-t border-border">
-                  <button
-                    onClick={markAllRead}
-                    className="w-full text-xs text-primary hover:underline font-medium"
-                  >
-                    Mark All as Read
-                  </button>
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
-
-          {/* Avatar — circular, opens user dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="h-9 w-9 rounded-full border-2 border-border hover:border-primary hover:ring-2 hover:ring-primary/20 transition-colors overflow-hidden shrink-0"
-                aria-label="User menu"
-              >
-                <Avatar className="h-full w-full">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-sm font-semibold rounded-full">
-                    {getInitials(displayUserName || "U")}
-                  </AvatarFallback>
-                </Avatar>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuLabel className="font-normal">
-                <p className="text-sm font-semibold truncate">
-                  {displayUserName}
-                </p>
-                {(user as any).email && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    {(user as any).email}
-                  </p>
-                )}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setLocation("/profile")}>
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              {isSuperAdmin && selectedOrg && (
-                <DropdownMenuItem onClick={handleSwitchOrg}>
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Switch Organisation
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => logout()}
-                className="text-destructive focus:text-destructive"
-              >
-                <LogOut className="mr-2 h-4 w-4" />
-                Log Out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+    <AdminLayout noPadding headerLeft={orgHeaderChip}>
 
       {/* ── Main body ── */}
-      <main className="flex-1 flex overflow-hidden">
+      <div className="flex h-full overflow-hidden">
         {/* ── Left Panel: Chat List ── */}
         <aside
           className={`
@@ -1682,7 +1503,7 @@ export default function ChatPage() {
             </>
           )}
         </section>
-      </main>
-    </div>
+      </div>
+    </AdminLayout>
   );
 }

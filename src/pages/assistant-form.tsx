@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,6 +24,7 @@ import {
   useUpdateAssistant,
   usePublishAssistant,
   useUnpublishAssistant,
+  type Assistant,
 } from "@/lib/api";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -85,45 +85,73 @@ const DEFAULTS: FormValues = {
   business_hours_end: "18:30",
 };
 
-// ── Component ─────────────────────────────────────────────────────────────────
+function fromAssistant(a: Assistant): FormValues {
+  return {
+    name: a.name,
+    system_prompt: a.system_prompt,
+    welcome_message: a.welcome_message,
+    default_language: a.default_language,
+    voice: a.voice,
+    llm_model: a.llm_model,
+    temperature: a.temperature,
+    business_hours_start: a.business_hours_start,
+    business_hours_end: a.business_hours_end,
+  };
+}
+
+// ── Page (handles loading) ────────────────────────────────────────────────────
 
 export default function AssistantFormPage() {
   const params = useParams<{ id?: string }>();
   const id = params.id === "new" ? undefined : params.id;
   const isEdit = !!id;
-  const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
 
   const { data: existing, isLoading } = useGetAssistant(id);
+
+  if (isEdit && isLoading) {
+    return (
+      <AdminLayout title="Edit Assistant">
+        <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+          Loading…
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AssistantForm
+      key={existing?.id ?? "new"}
+      id={id}
+      isEdit={isEdit}
+      existing={existing}
+    />
+  );
+}
+
+// ── Form (mounts only once data is ready) ────────────────────────────────────
+
+function AssistantForm({
+  id,
+  isEdit,
+  existing,
+}: {
+  id: string | undefined;
+  isEdit: boolean;
+  existing: Assistant | undefined;
+}) {
+  const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
 
   const {
     register,
     handleSubmit,
-    reset,
     watch,
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: DEFAULTS,
+    defaultValues: existing ? fromAssistant(existing) : DEFAULTS,
   });
-
-  // Populate form when editing
-  useEffect(() => {
-    if (existing) {
-      reset({
-        name: existing.name,
-        system_prompt: existing.system_prompt,
-        welcome_message: existing.welcome_message,
-        default_language: existing.default_language,
-        voice: existing.voice,
-        llm_model: existing.llm_model,
-        temperature: existing.temperature,
-        business_hours_start: existing.business_hours_start,
-        business_hours_end: existing.business_hours_end,
-      });
-    }
-  }, [existing, reset]);
 
   const temperature = watch("temperature");
   const selectedLanguage = watch("default_language");
@@ -166,16 +194,6 @@ export default function AssistantFormPage() {
       create.mutate(values);
     }
   };
-
-  if (isEdit && isLoading) {
-    return (
-      <AdminLayout title={isEdit ? "Edit Assistant" : "New Assistant"}>
-        <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
-          Loading…
-        </div>
-      </AdminLayout>
-    );
-  }
 
   return (
     <AdminLayout title={isEdit ? `Edit: ${existing?.name ?? "…"}` : "New Assistant"}>
