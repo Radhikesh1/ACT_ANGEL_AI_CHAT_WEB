@@ -413,7 +413,6 @@ export default function ChatPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const notificationsRef = useRef<HTMLDivElement>(null);
 
   const { contactId, mobile } = useMemo(() => getUrlParams(), []);
 
