@@ -374,7 +374,9 @@ export default function ChatPage() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
 
-  const [listSearch, setListSearch] = useState("");
+  const [listSearch, setListSearch] = useState(
+    () => getUrlParams().mobile ?? "",
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [transcriptSearch, setTranscriptSearch] = useState("");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
@@ -526,13 +528,18 @@ export default function ChatPage() {
     return r.totalCount ?? r.total ?? chatLogs.length;
   }, [chatLogsResponse, chatLogs.length]);
 
-  const filteredLogs = useMemo(
-    () =>
-      chatLogs.filter((log) =>
-        displayName(log).toLowerCase().includes(listSearch.toLowerCase()),
-      ),
-    [chatLogs, listSearch],
-  );
+  const filteredLogs = useMemo(() => {
+    const term = listSearch.trim().toLowerCase();
+    if (!term) return chatLogs;
+    const termDigits = term.replace(/\D/g, "");
+    return chatLogs.filter((log) => {
+      if (displayName(log).toLowerCase().includes(term)) return true;
+      if (termDigits && log.recipientNumber) {
+        return log.recipientNumber.replace(/\D/g, "").includes(termDigits);
+      }
+      return false;
+    });
+  }, [chatLogs, listSearch]);
 
   // Auto-select based on URL params
   useEffect(() => {
@@ -1165,9 +1172,10 @@ export default function ChatPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search conversations..."
-                className="pl-9 bg-background border-input rounded-lg h-9 text-sm"
+                className="pl-9 bg-background border-input rounded-lg h-9 text-sm disabled:opacity-70 disabled:cursor-not-allowed"
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
+                disabled={!!mobile}
               />
             </div>
           </div>
