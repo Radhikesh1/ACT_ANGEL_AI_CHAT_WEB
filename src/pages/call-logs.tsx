@@ -13,14 +13,11 @@ import {
   Clock,
   PhoneOff,
   DollarSign,
-  Cpu,
   Mic,
   PhoneCall,
   Timer,
   User,
-  Hash,
   FileText,
-  PlayCircle,
   AlertCircle,
   MessageSquare,
   Loader2,
@@ -34,23 +31,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { useGetCallLogs, type CallLog, type CallLogMessage } from "@/lib/api";
+import { useGetCallLogs, usePatchCallLogDuration, type CallLog, type CallLogMessage } from "@/lib/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getDuration(log: CallLog): number {
-  if (log.duration > 0) return log.duration;
-  if (log.call_status !== "in-progress" && log.started_at && log.ended_at) {
-    try {
-      const s = parseISO(log.started_at);
-      const e = parseISO(log.ended_at);
-      if (isValid(s) && isValid(e)) {
-        const diff = Math.round((e.getTime() - s.getTime()) / 1000);
-        if (diff > 0) return diff;
-      }
-    } catch { /* */ }
-  }
-  return 0;
+  return log.duration > 0 ? log.duration : 0;
 }
 
 function formatDuration(seconds: number): string {
@@ -111,7 +97,10 @@ function formatModelLabel(model: string): string {
 
 function usd(n: number | null | undefined): string {
   if (n == null) return "—";
-  return `$${n.toFixed(5)}`;
+  if (n === 0) return "$0.0000";
+  if (n < 0.001) return `$${n.toFixed(6)}`;
+  if (n < 0.01)  return `$${n.toFixed(5)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 function statusColor(status: string) {
@@ -128,15 +117,16 @@ function CallDetailModal({
   log,
   open,
   onClose,
+  onDurationCorrected,
 }: {
   log: CallLog | null;
   open: boolean;
   onClose: () => void;
+  onDurationCorrected?: (id: string, duration: number) => void;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const patchDuration = usePatchCallLogDuration();
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -144,7 +134,6 @@ function CallDetailModal({
   const messages = useMemo(() => parseMessages(log?.chat ?? null), [log?.chat]);
   const cb = log?.cost_breakdown ?? null;
 
-  // Prefer audio element's actual duration over stored/computed value
   const displayDuration = audioDuration ?? (log ? getDuration(log) : 0);
 
   const searchMatches = useMemo(() => {
@@ -168,20 +157,9 @@ function CallDetailModal({
     if (open && log) {
       setSearchQuery("");
       setCurrentMatchIndex(0);
-      setIsPlaying(false);
       setAudioDuration(null);
     }
   }, [open, log?.id]);
-
-  const togglePlayback = () => {
-    if (!audioRef.current || !log?.recording_url) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
-    setIsPlaying((p) => !p);
-  };
 
   function highlightText(text: string, i: number) {
     if (!searchQuery.trim()) return <>{text}</>;
@@ -214,291 +192,267 @@ function CallDetailModal({
     return rows;
   }, [cb]);
 
+  const shortId = log?.session_id
+    ? `···${log.session_id.replace(/-/g, "").slice(-8)}`
+    : "—";
+
   if (!open || !log) return null;
 
   const modal = (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] p-2 sm:p-4">
-      <div className="bg-card rounded-2xl shadow-xl w-full max-w-5xl h-[98vh] sm:h-[95vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-2 sm:p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-card rounded-2xl shadow-2xl w-full max-w-3xl max-h-[96vh] flex flex-col overflow-hidden border border-border/40">
 
         {/* ── Header ── */}
-        <div className="p-3 sm:p-5 border-b border-border bg-muted/30">
-          {/* Title row */}
-          <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
+        <div className="px-5 sm:px-6 pt-5 pb-4 border-b border-border shrink-0">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-[10px] font-semibold tracking-widest uppercase px-2 py-0.5 rounded-full border border-primary/20">
-                  <Hash className="w-2.5 h-2.5" />
-                  Call Log
-                </span>
-              </div>
               <h2
-                className="mt-1 text-sm sm:text-base font-mono font-semibold text-foreground truncate"
+                className="text-sm sm:text-[15px] font-bold text-primary leading-snug break-all"
                 title={log.session_id}
               >
-                {log.session_id}
+                Call ID: {log.session_id}
+                {log.assistant_name && (
+                  <span className="text-foreground font-normal"> / {log.assistant_name}</span>
+                )}
               </h2>
-              <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 truncate">
-                <Bot className="w-3 h-3 shrink-0 text-primary/70" />
-                <span className="truncate">{log.assistant_name || "—"}</span>
-              </p>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mt-2">
+                <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  <User className="w-3 h-3" />
+                  <span>Customer Phone Number:</span>
+                  <span className="font-mono text-foreground">{log.from_number || "—"}</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  <Phone className="w-3 h-3" />
+                  <span>Assistant Phone Number:</span>
+                  <span className="font-mono text-foreground">{log.to_number || "—"}</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                  <Clock className="w-3 h-3" />
+                  <span>Created At:</span>
+                  <span className="text-foreground">{formatDateShort(log.started_at)}</span>
+                </span>
+              </div>
             </div>
             <button
               onClick={onClose}
               className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
-
-          {/* Metadata chips — exact WEB structure */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="flex items-center gap-2 rounded-lg bg-background border border-border px-2.5 py-2 min-w-0">
-              <div className="shrink-0 w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center">
-                <User className="w-3 h-3 text-blue-500" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-semibold tracking-wider uppercase text-muted-foreground leading-none mb-0.5">Customer</p>
-                <p className="text-xs font-mono font-medium text-foreground truncate leading-tight">{log.from_number || "—"}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-lg bg-background border border-border px-2.5 py-2 min-w-0">
-              <div className="shrink-0 w-6 h-6 rounded-md bg-green-500/10 flex items-center justify-center">
-                <Phone className="w-3 h-3 text-green-500" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-semibold tracking-wider uppercase text-muted-foreground leading-none mb-0.5">Caller</p>
-                <p className="text-xs font-mono font-medium text-foreground truncate leading-tight">{log.from_number || "—"}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-lg bg-background border border-border px-2.5 py-2 min-w-0">
-              <div className="shrink-0 w-6 h-6 rounded-md bg-purple-500/10 flex items-center justify-center">
-                <PhoneCall className="w-3 h-3 text-purple-500" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-semibold tracking-wider uppercase text-muted-foreground leading-none mb-0.5">Assistant Line</p>
-                <p className="text-xs font-mono font-medium text-foreground truncate leading-tight">{log.to_number || "—"}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-lg bg-background border border-border px-2.5 py-2 min-w-0">
-              <div className="shrink-0 w-6 h-6 rounded-md bg-orange-500/10 flex items-center justify-center">
-                <Clock className="w-3 h-3 text-orange-500" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-semibold tracking-wider uppercase text-muted-foreground leading-none mb-0.5">Created</p>
-                <p className="text-xs font-medium text-foreground truncate leading-tight">{formatDateShort(log.started_at)}</p>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {/* ── Body ── */}
-        <div className="p-3 sm:p-5 space-y-3 flex-1 overflow-y-auto">
+        {/* ── Scrollable body ── */}
+        <div className="flex-1 overflow-y-auto">
 
-          {/* Metrics row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* ── Metrics grid ── */}
+          <div className="px-5 sm:px-6 py-4 border-b border-border grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-3.5">
+
             {/* Recording */}
-            <div className="flex flex-col gap-2 rounded-xl bg-background border border-border p-3 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-                  <Mic className="w-3 h-3 text-primary" />
-                </div>
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Recording</span>
-              </div>
+            <div className="flex items-center gap-3 min-w-0">
+              <Mic className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground whitespace-nowrap">Recording:</span>
               {log.recording_url ? (
-                <div className="flex items-center gap-2">
-                  <audio
-                    ref={audioRef}
-                    src={log.recording_url}
-                    onEnded={() => setIsPlaying(false)}
-                    onLoadedMetadata={(e) => {
-                      const d = (e.target as HTMLAudioElement).duration;
-                      if (d && isFinite(d)) setAudioDuration(Math.round(d));
-                    }}
-                  />
-                  <button
-                    className="flex items-center gap-1.5 text-primary hover:text-primary/80 transition-colors"
-                    onClick={togglePlayback}
-                  >
-                    <PlayCircle className={`w-6 h-6 shrink-0 ${isPlaying ? "text-green-500" : ""}`} />
-                    <span className="text-xs font-medium">{isPlaying ? "Playing…" : "Play"}</span>
-                  </button>
-                </div>
+                <audio
+                  controls
+                  src={log.recording_url}
+                  className="h-7 flex-1 min-w-0"
+                  onLoadedMetadata={(e) => {
+                    const d = (e.target as HTMLAudioElement).duration;
+                    if (!d || !isFinite(d)) return;
+                    const secs = Math.round(d);
+                    setAudioDuration(secs);
+                    if (log && secs !== log.duration) {
+                      patchDuration.mutate(
+                        { id: log.id, duration: secs },
+                        { onSuccess: () => onDurationCorrected?.(log.id, secs) },
+                      );
+                    }
+                  }}
+                />
               ) : (
-                <span className="text-xs text-muted-foreground/60 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" /> No audio
-                </span>
+                <span className="text-sm text-muted-foreground">No recording</span>
               )}
             </div>
 
             {/* Duration */}
-            <div className="flex flex-col gap-2 rounded-xl bg-background border border-border p-3 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-md bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <Timer className="w-3 h-3 text-blue-500" />
-                </div>
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Duration</span>
-              </div>
-              <span className="text-sm font-semibold text-foreground tabular-nums">
-                {formatDuration(displayDuration)}
-              </span>
+            <div className="flex items-center gap-3">
+              <Timer className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground">Call Duration:</span>
+              <span className="text-sm text-foreground tabular-nums font-medium">{formatDuration(displayDuration)}</span>
             </div>
 
-            {/* Model / Tokens */}
-            <div className="relative flex flex-col gap-2 rounded-xl bg-background border border-border p-3 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-md bg-indigo-500/10 flex items-center justify-center shrink-0">
-                  <Cpu className="w-3 h-3 text-indigo-500" />
-                </div>
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Model</span>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-foreground leading-tight">
-                  {cb ? formatModelLabel(cb.model) : "—"}
-                </p>
-                {cb && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {cb.tokens.input.toLocaleString()} in · {cb.tokens.output.toLocaleString()} out
-                  </p>
+            {/* Status */}
+            <div className="flex items-center gap-3">
+              <PhoneCall className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-sm font-semibold text-foreground">Status:</span>
+              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${statusColor(log.call_status)}`}>
+                {log.call_status === "in-progress" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 )}
-                {!cb && log.chars_used > 0 && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {log.chars_used.toLocaleString()} chars
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Cost */}
-            <div className="relative flex flex-col gap-2 rounded-xl bg-background border border-border p-3 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-md bg-emerald-500/10 flex items-center justify-center shrink-0">
-                  <DollarSign className="w-3 h-3 text-emerald-500" />
-                </div>
-                <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Call Cost</span>
-              </div>
-              <button
-                className="flex items-center gap-1.5 text-left"
-                onMouseEnter={() => setShowCostBreakdown(true)}
-                onMouseLeave={() => setShowCostBreakdown(false)}
-              >
-                <span className="text-sm font-semibold text-foreground tabular-nums">
-                  {usd(log.total_cost)}
-                </span>
-                {costRows.length > 0 && (
-                  showCostBreakdown
-                    ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
-                    : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
-                )}
-              </button>
-              {showCostBreakdown && costRows.length > 0 && (
-                <div className="absolute top-full left-0 mt-1.5 bg-popover border border-border rounded-xl p-3 shadow-xl z-20 min-w-44">
-                  <p className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground mb-2">Cost Breakdown</p>
-                  {costRows.map((item) => (
-                    <div key={item.label} className="flex justify-between text-sm py-1.5 border-b border-border/50 last:border-0">
-                      <span className="text-muted-foreground text-xs">{item.label}</span>
-                      <span className="font-medium text-xs font-mono">{usd(item.value)}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between pt-1.5 mt-0.5 border-t border-border">
-                    <span className="text-xs font-semibold">Total</span>
-                    <span className="text-xs font-bold font-mono">{usd(cb?.total_usd)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Call summary / error */}
-          <div className="rounded-xl border border-border bg-background overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border">
-              <MessageSquare className="w-3.5 h-3.5 text-primary" />
-              <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Call Summary</span>
-              <span className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-full capitalize ${statusColor(log.call_status)}`}>
-                {log.call_status === "in-progress" && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
                 {log.call_status.replace(/-/g, " ")}
               </span>
             </div>
-            <div className="px-4 py-3 text-sm leading-relaxed text-foreground">
-              {log.error_message ? (
-                <div className="flex items-start gap-2 text-destructive">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <p className="text-sm">{log.error_message}</p>
+
+            {/* Cost */}
+            <div className="relative flex items-center gap-3">
+              <DollarSign className="w-4 h-4 text-orange-500 shrink-0" />
+              <span className="text-sm font-semibold text-orange-500">Call Cost:</span>
+              <button
+                className="flex items-center gap-1 text-sm font-semibold text-orange-500 hover:text-orange-400 transition-colors"
+                onMouseEnter={() => setShowCostBreakdown(true)}
+                onMouseLeave={() => setShowCostBreakdown(false)}
+              >
+                <span className="font-mono">{usd(log.total_cost)}</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {showCostBreakdown && (
+                <div className="absolute top-full left-0 mt-1.5 bg-popover border border-border rounded-xl p-3 shadow-xl z-20 min-w-52">
+                  <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground mb-2">Cost Breakdown</p>
+                  {costRows.map((item) => (
+                    <div key={item.label} className="flex justify-between py-1.5 border-b border-border/50 last:border-0">
+                      <span className="text-muted-foreground text-xs">{item.label}</span>
+                      <span className="font-mono font-medium text-xs">{usd(item.value)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between pt-1.5 mt-0.5 border-t border-border">
+                    <span className="text-xs font-bold">Total</span>
+                    <span className="text-xs font-bold font-mono">{usd(log.total_cost)}</span>
+                  </div>
+                  {(cb || log.chars_used > 0) && (
+                    <div className="mt-3 pt-2.5 border-t border-border/50 space-y-1.5">
+                      <p className="text-[9px] font-bold tracking-widest uppercase text-muted-foreground">Usage</p>
+                      {cb ? (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground text-xs">Tokens in</span>
+                            <span className="font-mono text-xs">{cb.tokens.input.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground text-xs">Tokens out</span>
+                            <span className="font-mono text-xs">{cb.tokens.output.toLocaleString()}</span>
+                          </div>
+                          {cb.model && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground text-xs">Model</span>
+                              <span className="text-xs">{formatModelLabel(cb.model)}</span>
+                            </div>
+                          )}
+                        </>
+                      ) : log.chars_used > 0 ? (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground text-xs">Chars used</span>
+                          <span className="font-mono text-xs">{log.chars_used.toLocaleString()}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <span className="text-muted-foreground italic text-sm">No summary available.</span>
               )}
             </div>
           </div>
 
-          {/* Transcript */}
-          <div className="rounded-xl border border-border bg-background overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border">
-              <FileText className="w-3.5 h-3.5 text-primary" />
-              <span className="text-[9px] font-semibold tracking-widest uppercase text-muted-foreground">Transcript</span>
-              <span className="ml-auto text-[10px] font-mono text-muted-foreground">{messages.length} msgs</span>
-            </div>
-            <div className="p-3">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="relative flex-1">
-                  <Input
-                    placeholder="Search transcript…"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pr-10 h-8 text-sm"
-                  />
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                </div>
-                {totalMatches > 0 && (
-                  <div className="flex items-center gap-0.5 bg-muted rounded-lg px-2 py-1 border border-border">
-                    <span className="text-xs font-mono font-semibold text-primary whitespace-nowrap">
-                      {currentMatchIndex + 1}/{totalMatches}
-                    </span>
-                    <Button size="icon" variant="ghost" className="h-6 w-6"
-                      onClick={() => setCurrentMatchIndex((i) => (i - 1 + totalMatches) % totalMatches)}>
-                      <ChevronUp className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-6 w-6"
-                      onClick={() => setCurrentMatchIndex((i) => (i + 1) % totalMatches)}>
-                      <ChevronDown className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2.5 h-[42vh] overflow-y-auto pr-1">
-                {messages.length === 0 ? (
-                  <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
-                    No transcript recorded for this call.
-                  </div>
+          {/* ── Call Summary ── */}
+          <div className="px-5 sm:px-6 py-3.5 border-b border-border">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${log.error_message ? "text-destructive" : "text-muted-foreground"}`} />
+              <p className="text-sm leading-relaxed">
+                <span className="font-semibold text-foreground">Call Summary: </span>
+                {log.error_message ? (
+                  <span className="text-destructive">{log.error_message}</span>
                 ) : (
-                  messages.map((msg, i) => {
-                    const isAssistant = msg.role === "assistant";
-                    const isHighlighted =
-                      searchMatches[currentMatchIndex] &&
-                      messages.indexOf(searchMatches[currentMatchIndex]) === i;
-                    return (
-                      <div
-                        key={i}
-                        ref={(el) => { messageRefs.current[`msg-${i}`] = el; }}
-                        className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
-                      >
-                        <div
-                          className={`max-w-[80%] px-3.5 py-2 rounded-2xl text-sm transition-all ${
-                            isAssistant
-                              ? "bg-primary text-primary-foreground shadow-md"
-                              : "bg-muted text-foreground shadow-sm border border-border"
-                          } ${isHighlighted ? "ring-2 ring-primary ring-offset-2" : ""}`}
-                        >
-                          {highlightText(msg.content, i)}
-                        </div>
-                      </div>
-                    );
-                  })
+                  <span className="text-muted-foreground">
+                    {messages.length > 0
+                      ? `${messages.length} messages exchanged during this call.`
+                      : "No transcript recorded for this call."}
+                  </span>
                 )}
+              </p>
+            </div>
+          </div>
+
+          {/* ── Transcript ── */}
+          <div className="px-5 sm:px-6 pt-4 pb-5">
+            <div className="flex items-center gap-2 mb-3">
+              <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Transcript</span>
+              <span className="ml-auto text-xs font-mono text-muted-foreground">{messages.length} messages</span>
+            </div>
+
+            {/* Search */}
+            <div className="flex items-center gap-2 mb-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search transcript…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-8 text-sm bg-muted/30"
+                />
               </div>
+              {totalMatches > 0 && (
+                <div className="flex items-center gap-0.5 bg-muted rounded-lg px-2 py-1 border border-border">
+                  <span className="text-xs font-mono font-semibold text-primary whitespace-nowrap">
+                    {currentMatchIndex + 1}/{totalMatches}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-6 w-6"
+                    onClick={() => setCurrentMatchIndex((i) => (i - 1 + totalMatches) % totalMatches)}>
+                    <ChevronUp className="w-3 h-3" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-6 w-6"
+                    onClick={() => setCurrentMatchIndex((i) => (i + 1) % totalMatches)}>
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Messages */}
+            <div className="space-y-3 max-h-[38vh] overflow-y-auto pr-1">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+                  <MessageSquare className="w-8 h-8 opacity-20" />
+                  <p className="text-sm">No transcript recorded for this call.</p>
+                </div>
+              ) : (
+                messages.map((msg, i) => {
+                  const isAssistant = msg.role === "assistant";
+                  const isHighlighted =
+                    searchMatches[currentMatchIndex] &&
+                    messages.indexOf(searchMatches[currentMatchIndex]) === i;
+                  return (
+                    <div
+                      key={i}
+                      ref={(el) => { messageRefs.current[`msg-${i}`] = el; }}
+                      className={`flex gap-2 ${isAssistant ? "justify-start" : "justify-end"}`}
+                    >
+                      {isAssistant && (
+                        <div className="shrink-0 w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center mt-1">
+                          <Bot className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                      )}
+                      <div
+                        className={`max-w-[78%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                          isAssistant
+                            ? "bg-primary text-primary-foreground rounded-tl-sm"
+                            : "bg-muted text-foreground border border-border rounded-tr-sm"
+                        } ${isHighlighted ? "ring-2 ring-yellow-400 ring-offset-1" : ""}`}
+                      >
+                        {highlightText(msg.content, i)}
+                      </div>
+                      {!isAssistant && (
+                        <div className="shrink-0 w-6 h-6 rounded-full bg-muted border border-border flex items-center justify-center mt-1">
+                          <User className="w-3.5 h-3.5 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -602,6 +556,7 @@ export default function CallLogsPage() {
           log={selectedLog}
           open={!!selectedLog}
           onClose={() => setSelectedLog(null)}
+          onDurationCorrected={() => queryClient.invalidateQueries({ queryKey: ["call-logs"] })}
         />
 
         <Card>

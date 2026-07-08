@@ -375,6 +375,20 @@ export function useGetCallLog(
   });
 }
 
+export function usePatchCallLogDuration(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, { id: string; duration: number }>>;
+}) {
+  return useMutation<unknown, ApiError, { id: string; duration: number }>({
+    mutationFn: ({ id, duration }) =>
+      fetchJson(`/api/call-logs/${id}/duration`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duration }),
+      }),
+    ...options?.mutation,
+  });
+}
+
 // ── Plivo Settings ────────────────────────────────────────────────────────────
 
 export interface PlivoSettings {
