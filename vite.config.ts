@@ -27,7 +27,6 @@ function fetchProxy(prefix: string, target: string): Plugin {
         method,
         headers: reqHeaders,
         family: 4,
-        rejectUnauthorized: false,
       };
 
       const req = (useHttps ? https : http).request(options, (res) => {
