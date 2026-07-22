@@ -1,13 +1,19 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { realtimeClient, type RealtimeEntity } from '@/lib/realtime';
-import { useGetMe } from '@/lib/api';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { realtimeClient, type RealtimeEntity } from "@/lib/realtime";
+import { useGetMe } from "@/lib/api";
 
 const ENTITY_QUERY_KEYS: Record<RealtimeEntity, unknown[][]> = {
   calls: [],
-  chats: [['chat-logs']],
+  chats: [["chat-logs"]],
   credits: [],
-  notifications: [['notifications']],
+  notifications: [["notifications"]],
   contacts: [],
 };
 
@@ -31,7 +37,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     connectedRef.current = true;
 
     const unsub = realtimeClient.on((event) => {
-      if (event.type !== 'invalidate') return;
+      if (event.type !== "invalidate") return;
       const keys = ENTITY_QUERY_KEYS[event.entity] ?? [];
       for (const key of keys) {
         queryClient.invalidateQueries({ queryKey: key });
@@ -43,7 +49,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       realtimeClient.disconnect();
       connectedRef.current = false;
     };
-  }, [user?.id ?? null, queryClient]);
+  }, [user, queryClient]);
 
   return (
     <RealtimeContext.Provider value={realtimeClient}>
@@ -54,6 +60,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
 export function useRealtime() {
   const ctx = useContext(RealtimeContext);
-  if (!ctx) throw new Error('useRealtime must be used inside <RealtimeProvider>');
+  if (!ctx)
+    throw new Error("useRealtime must be used inside <RealtimeProvider>");
   return ctx;
 }
