@@ -22,8 +22,33 @@ export class RealtimeClient {
   private stopped = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+  constructor() {
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.reconnectDelay = RECONNECT_BASE_MS; // reset backoff on intentional reconnect
+          this.connect();
+        }
+      });
+      window.addEventListener('online', () => {
+        this.reconnectDelay = RECONNECT_BASE_MS;
+        this.connect();
+      });
+    }
+  }
+
   connect(): void {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN ||
+        this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
     this.stopped = false;
     this._open();
   }
@@ -31,6 +56,7 @@ export class RealtimeClient {
   disconnect(): void {
     this.stopped = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.ws?.close();
     this.ws = null;
   }
@@ -58,10 +84,15 @@ export class RealtimeClient {
 
     this.ws.onclose = () => {
       if (this.stopped) return;
+      const jitter = 0.5 + Math.random();
       this.reconnectTimer = setTimeout(() => {
-        this.reconnectDelay = Math.min(this.reconnectDelay * RECONNECT_FACTOR, RECONNECT_MAX_MS);
+        this.reconnectTimer = null;
+        this.reconnectDelay = Math.min(
+          this.reconnectDelay * RECONNECT_FACTOR,
+          RECONNECT_MAX_MS,
+        );
         this._open();
-      }, this.reconnectDelay);
+      }, this.reconnectDelay * jitter);
     };
 
     this.ws.onerror = () => {

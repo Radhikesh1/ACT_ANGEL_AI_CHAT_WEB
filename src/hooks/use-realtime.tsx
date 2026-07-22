@@ -43,7 +43,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       realtimeClient.disconnect();
       connectedRef.current = false;
     };
-  }, [user, queryClient]);
+  }, [user?.id ?? null, queryClient]);
 
   return (
     <RealtimeContext.Provider value={realtimeClient}>

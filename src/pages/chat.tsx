@@ -239,6 +239,7 @@ function OrgPicker({
   const [orgs, setOrgs] = useState<Organisation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMobileEmbed = !!getUrlParams().mobile;
 
   useEffect(() => {
     setLoading(true);
@@ -277,7 +278,7 @@ function OrgPicker({
 
   return (
     <div className="h-screen w-full flex flex-col bg-background">
-      <header className="h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-4 md:px-6 shrink-0">
+      <header className={`h-14 md:h-16 bg-card border-b border-border shadow-sm flex items-center justify-between px-4 md:px-6 shrink-0 ${isMobileEmbed ? "hidden" : ""}`}>
         <div className="flex items-center gap-2 md:gap-3">
           <Logo className="w-6 h-6 md:w-7 md:h-7 object-contain" />
           <span className="font-bold text-primary font-['Plus_Jakarta_Sans'] text-base md:text-lg tracking-tight">
@@ -942,7 +943,7 @@ export default function ChatPage() {
   return (
     <div className="h-screen w-full flex flex-col bg-background font-sans overflow-hidden">
       {/* ── Header ── */}
-      <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 md:px-6 shrink-0">
+      <header className={`h-14 bg-card border-b border-border flex items-center justify-between px-4 md:px-6 shrink-0 ${mobile ? "hidden" : ""}`}>
         {/* Left: Menu + Logo */}
         <div className="flex items-center gap-3">
           <button
