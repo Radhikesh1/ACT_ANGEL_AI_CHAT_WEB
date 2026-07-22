@@ -628,34 +628,9 @@ export default function ChatPage() {
     return [...serverDisplayMessages, ...uniquePending];
   }, [serverDisplayMessages, pendingMessages]);
 
-  // ── Auto-refresh (poll every 5 s when a conversation is open) ──────────────
-  useEffect(() => {
-    if (!selectedId || !queryParams) return;
-
-    let running = false;
-
-    const doRefresh = async () => {
-      if (running) return;
-      running = true;
-      setIsAutoRefreshing(true);
-      try {
-        await queryClient.invalidateQueries({
-          queryKey: getGetChatLogsQueryKey(queryParams),
-        });
-      } catch {
-        /* ignore */
-      } finally {
-        setIsAutoRefreshing(false);
-        running = false;
-      }
-    };
-
-    refreshTimerRef.current = setInterval(doRefresh, 5000);
-    return () => {
-      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      setIsAutoRefreshing(false);
-    };
-  }, [selectedId, queryParams, queryClient]);
+  // Auto-refresh is now handled by the WebSocket real-time sync (RealtimeProvider).
+  // When the server processes a new message it broadcasts { type: "invalidate", entity: "chats" }
+  // which triggers queryClient.invalidateQueries() without polling.
 
   // ── Scroll helpers ─────────────────────────────────────────────────────────
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
