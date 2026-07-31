@@ -62,6 +62,95 @@ export function useLogout(options?: {
   });
 }
 
+export function useChangePassword(options?: {
+  mutation?: Partial<
+    UseMutationOptions<unknown, ApiError, { currentPassword: string; newPassword: string }>
+  >;
+}) {
+  return useMutation<unknown, ApiError, { currentPassword: string; newPassword: string }>({
+    mutationFn: (data) =>
+      fetchJson("/api/profile/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+export interface UpdateProfileData {
+  displayName?: string | null;
+  contactNumber?: string | null;
+  birthDate?: string | null;
+  country?: string | null;
+  languages?: string | null;
+  address?: string | null;
+  emergencyContact?: string | null;
+}
+
+export function useUpdateProfile(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, UpdateProfileData>>;
+}) {
+  return useMutation<unknown, ApiError, UpdateProfileData>({
+    mutationFn: (data) =>
+      fetchJson("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
+  });
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface Notification {
+  id: string;
+  title?: string;
+  message: string;
+  type?: string;
+  read: boolean;
+  createdAt: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+}
+
+export function useGetNotifications(options?: {
+  query?: Partial<UseQueryOptions<unknown, ApiError, Notification[]>>;
+}) {
+  return useQuery<unknown, ApiError, Notification[]>({
+    queryKey: ["notifications"],
+    queryFn: () => fetchJson("/api/notifications"),
+    select: (data) =>
+      Array.isArray(data)
+        ? (data as Notification[])
+        : ((data as any)?.notifications ??
+          (data as any)?.data ??
+          []) as Notification[],
+    ...options?.query,
+  });
+}
+
+export function useMarkNotificationRead(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, string>>;
+}) {
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (id) =>
+      fetchJson(`/api/notifications/${id}/read`, { method: "PATCH" }),
+    ...options?.mutation,
+  });
+}
+
+export function useDeleteNotification(options?: {
+  mutation?: Partial<UseMutationOptions<unknown, ApiError, string>>;
+}) {
+  return useMutation<unknown, ApiError, string>({
+    mutationFn: (id) =>
+      fetchJson(`/api/notifications/${id}`, { method: "DELETE" }),
+    ...options?.mutation,
+  });
+}
+
 // ── Chat Logs ─────────────────────────────────────────────────────────────────
 
 export interface ChatLogsParams {

@@ -36,7 +36,10 @@ export default function LoginPage() {
     mutation: {
       onSuccess: () => redirectToChat(),
       onError: (error) => {
-        toast.error((error.data as any)?.message || "Login failed. Please check your credentials.");
+        toast.error(
+          (error.data as any)?.message ||
+            "Login failed. Please check your credentials.",
+        );
       },
     },
   });
@@ -56,7 +59,7 @@ export default function LoginPage() {
         <CardHeader className="space-y-4 pb-6 pt-8 text-center flex flex-col items-center">
           <Logo className="w-20 h-16 md:w-24 md:h-20 mb-2 md:mb-3" />
           <h1 className="text-lg md:text-xl font-semibold text-primary">
-            Act Angel AI
+            Chat Angel AI
           </h1>
           <h2 className="text-xl md:text-2xl font-bold text-primary mt-1 md:mt-2">
             Log in
@@ -94,7 +97,11 @@ export default function LoginPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setShowPassword(!showPassword)}
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>

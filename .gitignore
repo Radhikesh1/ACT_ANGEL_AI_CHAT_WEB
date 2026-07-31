@@ -7,7 +7,7 @@ node_modules/
 client/node_modules/
 
 # Build outputs (optional - decide based on your strategy)
-dist/  # Uncomment if you DON'T want to track built files
+dist/
 
 # Environment files
 .env
@@ -58,4 +58,4 @@ attached_assets/
 package-lock.json
 
 # Claoude file
-.claude/
+.claude
