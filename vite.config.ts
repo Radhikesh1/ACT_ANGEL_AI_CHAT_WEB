@@ -90,10 +90,16 @@ function fetchProxy(prefix: string, target: string): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const apiTarget = env.PUBLIC_API_URL ?? "https://actangels.com";
+  const apiTarget = env.PUBLIC_API_URL;
+  if (!apiTarget) {
+    if (mode === "production") {
+      throw new Error("PUBLIC_API_URL env var is required for production builds");
+    }
+    console.warn("[vite] PUBLIC_API_URL not set — proxying to http://localhost:8000");
+  }
 
   return {
-    plugins: [react(), tailwindcss(), fetchProxy("/api", apiTarget)],
+    plugins: [react(), tailwindcss(), fetchProxy("/api", apiTarget ?? "http://localhost:8000")],
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "src"),

@@ -18,6 +18,7 @@ import {
   useUpdateProfile,
   ApiError,
 } from "@/lib/api";
+import { getInitials } from "@/lib/utils";
 import { useTheme } from "@/lib/theme-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { Logo } from "@/components/Logo";
@@ -30,17 +31,6 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-
-function getInitials(name: string): string {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .substring(0, 2);
-}
 
 function roleLabel(role: string): string {
   const map: Record<string, string> = {
@@ -56,9 +46,20 @@ function roleLabel(role: string): string {
 export default function ProfilePage() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const { data: user } = useGetMe();
+  const { data: user, error: userError } = useGetMe();
   const { theme, setTheme } = useTheme();
-  const [notifications, setNotifications] = useState(true);
+  const [notifications, setNotifications] = useState(
+    () => localStorage.getItem("chat_notifications_enabled") !== "false",
+  );
+
+  useEffect(() => {
+    if (
+      userError instanceof ApiError &&
+      [401, 403].includes(userError.response.status)
+    ) {
+      setLocation("/login");
+    }
+  }, [userError]);
 
   // Editable profile fields
   const [displayName, setDisplayName] = useState("");
@@ -488,7 +489,13 @@ export default function ProfilePage() {
                     </div>
                     <Switch
                       checked={notifications}
-                      onCheckedChange={setNotifications}
+                      onCheckedChange={(checked) => {
+                        setNotifications(checked);
+                        localStorage.setItem(
+                          "chat_notifications_enabled",
+                          String(checked),
+                        );
+                      }}
                       aria-label="Toggle notifications"
                     />
                   </div>

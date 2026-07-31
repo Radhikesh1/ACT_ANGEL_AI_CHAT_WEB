@@ -1,6 +1,5 @@
 import {
   createContext,
-  useContext,
   useEffect,
   useRef,
   type ReactNode,
@@ -56,11 +55,4 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       {children}
     </RealtimeContext.Provider>
   );
-}
-
-export function useRealtime() {
-  const ctx = useContext(RealtimeContext);
-  if (!ctx)
-    throw new Error("useRealtime must be used inside <RealtimeProvider>");
-  return ctx;
 }
